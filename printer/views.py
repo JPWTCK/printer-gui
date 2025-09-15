@@ -11,6 +11,11 @@ from . import settings
 from . import file_printer
 
 import re
+from pathlib import Path
+
+ALLOWED_EXTENSIONS = {
+    '.pdf', '.ps', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.tif', '.tiff'
+}
 
 
 UPLOADS_DIR = settings.STATICFILES_DIRS[0] + '/uploads/'
@@ -38,6 +43,11 @@ def upload_file(request):
     else:
         fs_storage = FileSystemStorage(location=UPLOADS_DIR)
         upload = request.FILES['file_upload']
+
+        ext = Path(upload.name).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            messages.error(request, 'File type not supported')
+            return HttpResponseRedirect(reverse('index'))
 
         filename = re.sub('[^a-zA-Z0-9.]', '-', upload.name)
         upload.name = filename

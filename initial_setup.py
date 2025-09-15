@@ -5,8 +5,6 @@ import subprocess as sp
 
 raspi_commands = [
     'sudo apt install -y cups',
-    'sudo apt install -y default-jre libreoffice-core libreoffice-common libreoffice-java-common',
-    'sudo apt install -y --no-install-recommends libreoffice-writer libreoffice-gtk3',
     'sudo usermod -aG lpadmin pi'
 ]
 

@@ -5,7 +5,6 @@ import os
 
 
 UPLOADS_DIR = settings.STATICFILES_DIRS[0] + '/uploads/'
-CONVERTED_DIR = settings.STATICFILES_DIRS[0] + '/converted_uploads/'
 
 
 class File(models.Model):
@@ -20,14 +19,18 @@ class File(models.Model):
     def determine_file_type(self, filename):
         if filename.endswith('pdf'):
             self.file_type = 'PDF'
-        elif filename.endswith('doc'):
-            self.file_type = 'Word (2003)'
-        elif filename.endswith('docx'):
-            self.file_type = 'Word (2007)'
-        elif filename.endswith('odt'):
-            self.file_type = 'OpenDocument Text'
-        elif filename.endswith('rtf'):
-            self.file_type = 'Rich Text Format'
+        elif filename.endswith('ps'):
+            self.file_type = 'PostScript'
+        elif filename.endswith('txt'):
+            self.file_type = 'Plain text'
+        elif filename.endswith('jpg') or filename.endswith('jpeg'):
+            self.file_type = 'JPEG image'
+        elif filename.endswith('png'):
+            self.file_type = 'PNG image'
+        elif filename.endswith('gif'):
+            self.file_type = 'GIF image'
+        elif filename.endswith('tif') or filename.endswith('tiff'):
+            self.file_type = 'TIFF image'
         else:
             self.file_type = 'Unknown format'
 
@@ -37,11 +40,9 @@ class File(models.Model):
         super(File, self).save(*args, **kwargs)
 
     def delete(self):
-        # Delete the physical file (included pdf conversion), if existing
         try:
             os.remove(f"{UPLOADS_DIR}{self.name}")
-            os.remove(f"{CONVERTED_DIR}{os.path.splitext(self.name)[1]}.pdf")
-        except:
+        except FileNotFoundError:
             pass
 
         super(File, self).delete()
