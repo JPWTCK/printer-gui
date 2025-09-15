@@ -44,10 +44,10 @@ class FileUploadForm(forms.Form):
     file_upload = forms.FileField(
         label='Upload Document',
         required=True,
-        help_text='Only pdf, doc, docx, odt, and rtf are supported',
+        help_text='Only pdf, ps, txt, jpg, jpeg, png, gif, and tiff are supported',
         widget=forms.FileInput(attrs={
             'multiple': False,
-            'accept': 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats,application/vnd.oasis.opendocument.text,application/rtf'
+            'accept': 'application/pdf,application/postscript,text/plain,image/jpeg,image/png,image/gif,image/tiff'
         })
     )
 

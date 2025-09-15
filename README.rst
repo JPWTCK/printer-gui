@@ -13,7 +13,7 @@ Changes
 
 - Capturing ``stderr`` from subprocesses to convey errors to the user.
 - Leveraging Django's Messages Framework to display statuses and exceptions.
-- Implementing ``libreoffice`` for PDF conversion instead of ``pandoc``.
+- Removed dependency on ``libreoffice``; only CUPS-supported formats are accepted.
 - Re-designed UI for better look/feel. -- Improved mobile/overall experience.
 - Added a favicon to better distinguish the browser tab.
 
@@ -28,7 +28,7 @@ Requirements
 
 Limitations
 ###########
-- Only pdf, doc, docx, odt, and rtf are supported.
+- Only pdf, ps, txt, jpg, jpeg, png, gif, and tiff files are supported.
 - It seems that some printers may not respect page orientation chosen.
 - No sessions.
 
@@ -59,22 +59,16 @@ Setup
 
 2) Install some necessary utilities
 -----------------------------------
-| My printer server handles PDFs, as well as doc, docx, odt, and rtf
-| formats. Since the 'lp' command-line utility is called for printing,
-| all formats that are not PDFs are converted to PDF using LibreOffice.
-| In the future, I may experiment with converting images to PDF format.
-| Anyhow, the following utilities need to be installed:
+| The printer server handles only formats CUPS can print directly such as
+| PDF, PostScript, plain text, and common images (JPEG, PNG, GIF, TIFF).
+| Since the 'lp' command-line utility prints these without conversion,
+| only CUPS itself is required:
 |
 | - cups 2.3.3
-| - default-jre 2:1.11
-| - libreoffice-core 1:7.0.4
-| - libreoffice-common 1:7.0.4
-| - libreoffice-java-common 1:7.0.4
-| - libreoffice-writer 1:7.0.4
 |
-| If you are using a Raspberry Pi with Raspberry Pi OS or if you are
-| using a similar Debian distribution, you may use the ``initial_setup.py``
-| script to install the above packages.
+| If you are using a Raspberry Pi with Raspberry Pi OS or a similar
+| Debian distribution, you may use the ``initial_setup.py`` script to
+| install this package.
 
 
 3) Setup the virtualenv
