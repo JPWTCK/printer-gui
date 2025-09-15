@@ -54,12 +54,14 @@ INSTALLED_APPS = [
 
     ## 3rd party ##
     'crispy_forms',
+    'crispy_bootstrap5',
 
     ## Programmer-defined ##
     'printer',
 ]
 
-CRISPY_TEMPLATE_PACK = 'bootstrap4' # For Crispy Forms
+CRISPY_ALLOWED_TEMPLATE_PACKS = ("bootstrap5",)
+CRISPY_TEMPLATE_PACK = 'bootstrap5'  # For Crispy Forms
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
