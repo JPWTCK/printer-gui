@@ -57,18 +57,23 @@ Setup
 | on how to do this such as `this one <https://www.howtogeek.com/169679/how-to-add-a-printer-to-your-raspberry-pi-or-other-linux-computer/>`_.
 
 
-2) Install some necessary utilities
------------------------------------
-| The printer server handles only formats CUPS can print directly such as
-| PDF, PostScript, plain text, and common images (JPEG, PNG, GIF, TIFF).
-| Since the 'lp' command-line utility prints these without conversion,
-| only CUPS itself is required:
+2) Install system packages
+--------------------------
+| Install CUPS and, if you need to support additional document formats,
+| optional converters such as LibreOffice and a Java runtime.
 |
-| - cups 2.3.3
+| - cups
+| - libreoffice (optional)
+| - default-jre (optional)
 |
-| If you are using a Raspberry Pi with Raspberry Pi OS or a similar
-| Debian distribution, you may use the ``initial_setup.py`` script to
-| install this package.
+| If printing is required, add your user to the ``lpadmin`` group so it
+| can access the printer:
+
+.. code:: bash
+
+    sudo apt install cups
+    sudo apt install libreoffice default-jre  # optional
+    sudo usermod -aG lpadmin $USER
 
 
 3) Setup the virtualenv
@@ -84,19 +89,30 @@ Setup
     pip3 install -r requirements.txt
 
 
-4) Run the initial_setup script
--------------------------------
-| This script must be run within the Django shell. With the
-| virtualenv enabled (``source venv/bin/activate``), enter the
-| following commands from the root directory of this repository:
+4) Run database migrations and create settings
+----------------------------------------------
+| With the virtualenv enabled (``source venv/bin/activate``), run the
+| migrations and create the initial ``Settings`` record:
 
 .. code:: bash
 
-    python3 manage.py shell
-    exec(open('initial_setup.py').read())
+    python manage.py makemigrations
+    python manage.py migrate
+    python manage.py shell
 
+.. code:: python
 
-| Follow the prompts until the script is finished and the shell is closed.
+    from printer.models import Settings
+    Settings.objects.get_or_create(
+        id=1,
+        defaults={
+            'app_title': 'GUI Print Server',
+            'default_color': 'RGB',
+            'default_orientation': '3',
+            'printer_profile': 'None found',
+        }
+    )
+    exit()
 
 5) Give your device a static IP
 -------------------------------
