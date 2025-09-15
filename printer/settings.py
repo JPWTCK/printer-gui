@@ -136,9 +136,8 @@ LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'UTC'
 
+# Localized formatting relies on LANGUAGE_CODE and USE_I18N
 USE_I18N = True
-
-USE_L10N = True
 
 USE_TZ = True
 
