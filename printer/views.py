@@ -145,9 +145,12 @@ def edit_settings(request):
         else:
             form = SettingsForm(instance=app_settings, data=request.POST)
 
-        form.save()
-        file_printer.refresh_printer_profile()
-        return HttpResponseRedirect(reverse('index'))
+        if form.is_valid():
+            form.save()
+            file_printer.refresh_printer_profile()
+            return HttpResponseRedirect(reverse('index'))
+
+        messages.error(request, 'Please correct the errors below.')
 
     context = { 'settings': app_settings, 'form': form }
     return render(request, 'settings.html', context)
