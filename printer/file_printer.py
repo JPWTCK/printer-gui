@@ -1,7 +1,7 @@
 from django.conf import settings as django_settings
 
 import subprocess as sp
-
+import os
 from .utils import DEFAULT_APP_SETTINGS, get_app_settings
 
 
@@ -64,4 +64,16 @@ def print_pdf(filename, page_range, pages, color, orientation):
 
 
 def print_file(filename, page_range, pages, color, orientation):
-    return print_pdf(UPLOADS_DIR + filename, page_range, pages, color, orientation)
+    # Prevent filenames that could be interpreted as options or contain path traversal
+    if filename.startswith('-'):
+        return b"", b"Invalid filename: cannot start with '-'"
+    if os.path.basename(filename) != filename:
+        return b"", b"Invalid filename: must not contain path separators"
+    abs_path = os.path.abspath(os.path.join(UPLOADS_DIR, filename))
+    # Ensure the file is inside the uploads directory
+    if not abs_path.startswith(os.path.abspath(UPLOADS_DIR)):
+        return b"", b"Invalid filename: outside uploads directory"
+    # Optionally, check file existence
+    if not os.path.isfile(abs_path):
+        return b"", b"Invalid filename: file does not exist"
+    return print_pdf(abs_path, page_range, pages, color, orientation)
