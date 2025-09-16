@@ -22,7 +22,8 @@ Requirements
 ############
 
 - Raspberry Pi or similar SBC with networking capability
-- Python 3.8+ and the pip package installer on the SBC's OS.
+- Python 3.10+ (required by Django 5.2) and the ``pip`` package installer on the SBC's OS.
+- Ability to install CUPS so the ``lp`` command is available to the application.
 - A network printer connected on the local network
 
 
@@ -59,28 +60,26 @@ Setup
 
 2) Install system packages
 --------------------------
-| Install CUPS and, if you need to support additional document formats,
-| optional converters such as LibreOffice and a Java runtime.
-|
-| - cups
-| - libreoffice (optional)
-| - default-jre (optional)
-|
-| If printing is required, add your user to the ``lpadmin`` group so it
-| can access the printer:
+| Install the CUPS packages so the ``lp`` command is available to Django.
+| LibreOffice and Java are no longer required because the app only accepts
+| formats handled directly by CUPS. On Debian/Ubuntu:
 
 .. code:: bash
 
+    sudo apt update
     sudo apt install cups
-    sudo apt install libreoffice default-jre  # optional
     sudo usermod -aG lpadmin $USER
+    sudo systemctl enable --now cups
+
+| On other distributions, install the package that provides ``lp`` (often
+| named ``cups`` or ``cups-client``).
 
 
 3) Setup the virtualenv
 -----------------------
-| You will need to create your Python virtualenv in the root
-| directory for this project, activate it and install the
-| required packages:
+| The project no longer includes an install script. Create your Python
+| virtualenv in the root directory for this project, activate it, and
+| install the required packages manually:
 
 .. code:: bash
 
@@ -135,13 +134,20 @@ Setup
 | a string in the ALLOWED_HOSTS list.
 
 
-7) Configure the scripts
-------------------------
-| Assuming you have cloned this repository in the '/home/pi'
-| directory, you will only need to change the IP address
-| in the 'start.bash' script to the static IP address you have
-| set. You can run the server by executing this script and enter
-| Ctrl-C to exit it:
+7) Start the development server
+-------------------------------
+| Activate the virtualenv and run the Django development server on your
+| static IP (or ``0.0.0.0`` if you prefer to listen on every interface):
+
+.. code:: bash
+
+    source venv/bin/activate
+    python manage.py runserver 0.0.0.0:8000
+
+
+| The repository includes a simple ``start.bash`` helper for Raspberry Pi
+| deployments. Update the IP address in that script to match your static
+| address before using it. You can then launch the server with:
 
 .. code:: bash
 
@@ -151,15 +157,16 @@ Setup
 
     System check identified no issues (0 silenced).
     January 04, 2021 - 17:40:26
-    Django version 3.1, using settings 'printer.settings'
-    Starting development server at http://192.168.1.133:8000/
+    Django version 5.2.6, using settings 'printer.settings'
+    Starting development server at http://<STATIC_IP>:8000/
     Quit the server with CONTROL-C.
 
 
 | Assuming the server runs correctly, you may configure the
 | server to run automatically on startup as a systemd service.
 | On the Raspberry Pi, copy the 'printerserver.service' file
-| to '/etc/systemd/system/', start it, and enable it.
+| to '/etc/systemd/system/', update ``ExecStart`` if needed,
+| start it, and enable it.
 
 .. code:: bash
 
