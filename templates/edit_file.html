@@ -15,7 +15,7 @@
             <div class="bg-white br-2 lightly-pad-container shadow">
 				<h2 class="text-center">File Options</h2>
 			</div>
-            <div class="bg-white br-2 p-3 mr-1 ml-1">
+            <div class="bg-white br-2 p-3 me-1 ms-1">
                 <div class="form-container shadow">
                     {% csrf_token %}
                     <form method="post" onsubmit="submitEditFileForm('{{ csrf_token }}','{{ file.id }}'); return false;">
@@ -91,7 +91,7 @@
                             </div>
                         </div>
                         <div class="d-flex justify-content-center p-3">
-                            <button class="bttn-brand-blue pl-3 pr-3" id="submit">Save</button>
+                            <button class="bttn-brand-blue ps-3 pe-3" id="submit">Save</button>
                         </div>
                     </form>
                 </div>
@@ -101,44 +101,57 @@
 </div>
 
 <script>
-    $(document).ready(function() {
-        let rangeSelect = document.getElementById('id_page_range');
-        let pagesField = document.getElementById('id_pages');
+    document.addEventListener('DOMContentLoaded', function () {
+        const rangeSelect = document.getElementById('id_page_range');
+        const pagesField = document.getElementById('id_pages');
 
-        rangeSelect.addEventListener('change', function() {
-            if (rangeSelect[0].selected) { 
+        const updatePagesFieldState = function () {
+            if (rangeSelect.selectedIndex === 0) {
                 pagesField.disabled = true;
                 pagesField.value = 'All';
-            }
-            else { 
+            } else {
                 pagesField.disabled = false;
-                pagesField.value = '1-1';
+                if (!pagesField.value || pagesField.value === 'All') {
+                    pagesField.value = '1-1';
+                }
             }
-        });
+        };
+
+        rangeSelect.addEventListener('change', updatePagesFieldState);
+        updatePagesFieldState();
     });
 
-    function submitEditFileForm(csrfToken, file_id) {
-        $.ajax({
-            url: '/submit_edit_file_form/',
-            type: 'POST',
-            data: {
-                'csrfmiddlewaretoken': csrfToken,
-                'file_id': file_id,
-                'name': document.getElementById('id_name').value,
-                'page_range': document.getElementById('id_page_range').value,
-                'pages': document.getElementById('id_pages').value,
-                'color': document.getElementById('id_color').value,
-                'orientation': document.getElementById('id_orientation').value
-            },
-            success: function() {
-                console.log('200: POST succeeded.');
-                history.back();
-            },
-            error: function() {
-                console.log('403: POST failed.');
-                alert('Your request could not be submitted.');
+    async function submitEditFileForm(csrfToken, fileId) {
+        const formData = new URLSearchParams({
+            csrfmiddlewaretoken: csrfToken,
+            file_id: fileId,
+            name: document.getElementById('id_name').value,
+            page_range: document.getElementById('id_page_range').value,
+            pages: document.getElementById('id_pages').value,
+            color: document.getElementById('id_color').value,
+            orientation: document.getElementById('id_orientation').value,
+        });
+
+        try {
+            const response = await fetch('/submit_edit_file_form/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error(response.statusText);
             }
-        })
+
+            console.log('200: POST succeeded.');
+            history.back();
+        } catch (error) {
+            console.log('403: POST failed.');
+            alert('Your request could not be submitted.');
+        }
     }
 </script>
 {% endblock content %}
