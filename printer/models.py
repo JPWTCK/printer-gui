@@ -39,13 +39,13 @@ class File(models.Model):
 
         super(File, self).save(*args, **kwargs)
 
-    def delete(self):
+    def delete(self, using=None, keep_parents=False):
         try:
             os.remove(f"{UPLOADS_DIR}{self.name}")
         except FileNotFoundError:
             pass
 
-        super(File, self).delete()
+        return super(File, self).delete(using=using, keep_parents=keep_parents)
 
     class Meta:
         verbose_name_plural = 'files'
