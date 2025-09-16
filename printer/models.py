@@ -1,10 +1,10 @@
+from django.conf import settings as django_settings
 from django.db import models
-from . import settings
 
-import os
+from pathlib import Path
 
 
-UPLOADS_DIR = settings.STATICFILES_DIRS[0] + '/uploads/'
+UPLOADS_DIR = Path(django_settings.MEDIA_ROOT) / "uploads"
 
 
 class File(models.Model):
@@ -39,13 +39,14 @@ class File(models.Model):
 
         super(File, self).save(*args, **kwargs)
 
-    def delete(self):
+    def delete(self, *args, **kwargs):
+        file_path = UPLOADS_DIR / self.name
         try:
-            os.remove(f"{UPLOADS_DIR}{self.name}")
+            file_path.unlink()
         except FileNotFoundError:
             pass
 
-        super(File, self).delete()
+        super(File, self).delete(*args, **kwargs)
 
     class Meta:
         verbose_name_plural = 'files'

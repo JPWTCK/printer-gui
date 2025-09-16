@@ -1,23 +1,50 @@
-from . import settings
-from .models import Settings
+from django.conf import settings as django_settings
 
 import subprocess as sp
+from pathlib import Path
+
+from .utils import DEFAULT_APP_SETTINGS, get_app_settings
 
 
-UPLOADS_DIR = settings.STATICFILES_DIRS[0] + '/uploads/'
+UPLOADS_DIR = Path(django_settings.MEDIA_ROOT) / 'uploads'
+DEFAULT_PRINTER_PROFILE = DEFAULT_APP_SETTINGS["printer_profile"]
 
 
-settings = Settings.objects.get(id=1)
-printer = settings.printer_profile
+_printer_profile = None
+
+
+def _load_printer_profile():
+    app_settings = get_app_settings()
+    if app_settings is None:
+        return DEFAULT_PRINTER_PROFILE
+
+    app_settings.refresh_from_db()
+    printer_name = app_settings.printer_profile
+    if not printer_name:
+        return DEFAULT_PRINTER_PROFILE
+    return printer_name
+
+
+def _get_printer_profile():
+    global _printer_profile
+
+    if _printer_profile is None:
+        _printer_profile = _load_printer_profile()
+    return _printer_profile
 
 
 def refresh_printer_profile():
-    global printer
-    settings.refresh_from_db()
-    printer = settings.printer_profile
+    global _printer_profile
+
+    _printer_profile = _load_printer_profile()
 
 
 def print_pdf(filename, page_range, pages, color, orientation):
+    printer = _get_printer_profile()
+    if not printer or printer == DEFAULT_PRINTER_PROFILE:
+        error_message = "Printer profile is not configured.".encode()
+        return b"", error_message
+
     if page_range == '0':
         command = [
             'lp', '-d', printer, '-o',
@@ -38,6 +65,5 @@ def print_pdf(filename, page_range, pages, color, orientation):
 
 
 def print_file(filename, page_range, pages, color, orientation):
-    global printer
-
-    return print_pdf(UPLOADS_DIR + filename, page_range, pages, color, orientation)
+    file_path = UPLOADS_DIR / filename
+    return print_pdf(str(file_path), page_range, pages, color, orientation)

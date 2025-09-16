@@ -1,27 +1,33 @@
-from django.contrib import messages
-from django.shortcuts import render
-from django.http import HttpResponse, HttpResponseRedirect
-from django.urls import reverse
-from django.core.files.storage import FileSystemStorage
-from django.views.decorators.cache import never_cache
-
-from .models import *
-from .forms import *
-from . import settings
-from . import file_printer
-
 import re
 from pathlib import Path
 
+from django.conf import settings as django_settings
+from django.contrib import messages
+from django.core.files.storage import FileSystemStorage
+from django.http import HttpResponse, HttpResponseRedirect
+from django.shortcuts import render
+from django.urls import reverse
+from django.views.decorators.cache import never_cache
+
+from . import file_printer
+from .forms import FileUploadForm, SettingsForm
+from .models import File
+from .utils import DEFAULT_APP_SETTINGS, get_app_settings
+
 ALLOWED_EXTENSIONS = {
-    '.pdf', '.ps', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.tif', '.tiff'
+    '.pdf',
+    '.ps',
+    '.txt',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.tif',
+    '.tiff',
 }
 
 
-UPLOADS_DIR = settings.STATICFILES_DIRS[0] + '/uploads/'
-
-# App default settings (color mode, orientation, printer used):
-settings = Settings.objects.get(id=1)
+UPLOADS_ROOT = Path(django_settings.MEDIA_ROOT) / 'uploads'
 
 
 @never_cache
@@ -32,38 +38,50 @@ def index(request):
 
 
 def upload_file(request):
+    app_settings = get_app_settings()
     printer_selected = True
 
-    if request.method != 'POST':
-        settings.refresh_from_db()
-        if settings.printer_profile == 'None found':
+    if app_settings is None:
+        printer_selected = False
+    else:
+        app_settings.refresh_from_db()
+        if app_settings.printer_profile == DEFAULT_APP_SETTINGS['printer_profile']:
             printer_selected = False
 
-        form = FileUploadForm()
-    else:
-        fs_storage = FileSystemStorage(location=UPLOADS_DIR)
-        upload = request.FILES['file_upload']
+    if request.method == 'POST':
+        form = FileUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            upload = form.cleaned_data['file_upload']
+            ext = Path(upload.name).suffix.lower()
+            if ext not in ALLOWED_EXTENSIONS:
+                messages.error(request, 'File type not supported')
+                return HttpResponseRedirect(reverse('index'))
 
-        ext = Path(upload.name).suffix.lower()
-        if ext not in ALLOWED_EXTENSIONS:
-            messages.error(request, 'File type not supported')
+            filename = re.sub(r'[^a-zA-Z0-9.]', '-', upload.name)
+            storage = FileSystemStorage(location=str(UPLOADS_ROOT))
+            stored_name = storage.save(filename, upload)
+
+            default_color = DEFAULT_APP_SETTINGS['default_color']
+            default_orientation = DEFAULT_APP_SETTINGS['default_orientation']
+
+            if app_settings is not None:
+                default_color = app_settings.default_color or default_color
+                default_orientation = app_settings.default_orientation or default_orientation
+
+            File.objects.create(
+                name=stored_name,
+                page_range='0',
+                pages='All',
+                color=default_color,
+                orientation=default_orientation,
+            )
             return HttpResponseRedirect(reverse('index'))
 
-        filename = re.sub('[^a-zA-Z0-9.]', '-', upload.name)
-        upload.name = filename
+        messages.error(request, 'Please correct the errors below.')
+    else:
+        form = FileUploadForm()
 
-        # Get settings object to apply defaults to the new file object:
-
-        filename = fs_storage.save(filename, upload)
-        new_file = File(
-            name=upload.name, page_range='0', pages='All',
-            color=settings.default_color,
-            orientation=settings.default_orientation
-        )
-        new_file.save()
-        return HttpResponseRedirect(reverse('index'))
-
-    context = { 'printer_selected': printer_selected, 'form': form }
+    context = {'printer_selected': printer_selected, 'form': form}
     return render(request, 'upload_file.html', context)
 
 
@@ -97,38 +115,67 @@ def delete_file(request, file_id):
 
 def print_files(request):
     if request.method == 'POST':
-        files = File.objects.all()
-        
+        files = list(File.objects.all())
+
         errors = False
+        any_success = False
         for fileObj in files:
-            output = file_printer.print_file(fileObj.name, fileObj.page_range,
-                                fileObj.pages, fileObj.color, fileObj.orientation)
-            err = output[1].decode()
-            if err != '':
+            _stdout, stderr = file_printer.print_file(
+                fileObj.name,
+                fileObj.page_range,
+                fileObj.pages,
+                fileObj.color,
+                fileObj.orientation,
+            )
+            err = stderr.decode('utf-8', errors='replace').strip()
+            if err:
                 errors = True
                 messages.error(request, err)
-            else:
-                messages.info(request, f"Printing {fileObj.name}")
-            
+                continue
+
+            any_success = True
+            messages.info(request, f"Printing {fileObj.name}")
             fileObj.delete()
 
         if errors:
             return HttpResponse(status=500)
-        else:
+
+        if any_success:
             messages.success(request, 'Jobs completed')
-            return HttpResponse(status=204) # OK, Nothing to return
+        return HttpResponse(status=204) # OK, Nothing to return
     return HttpResponse(status=403) # !POST forbidden
 
 
 def edit_settings(request):
-    settings.refresh_from_db()
-    if request.method != 'POST':
-        form = SettingsForm(instance=settings)
-    else:
-        form = SettingsForm(instance=settings, data=request.POST)
-        form.save()
-        file_printer.refresh_printer_profile()
-        return HttpResponseRedirect(reverse('index'))
+    app_settings = get_app_settings()
+    if app_settings is not None:
+        app_settings.refresh_from_db()
 
-    context = { 'settings': settings, 'form': form }
+    form_kwargs = {}
+    if app_settings is None:
+        form_kwargs['initial'] = DEFAULT_APP_SETTINGS
+    else:
+        form_kwargs['instance'] = app_settings
+
+    if request.method == 'POST':
+        form = SettingsForm(data=request.POST, **form_kwargs)
+        if form.is_valid():
+            form.save()
+            file_printer.refresh_printer_profile()
+            messages.success(request, 'Settings updated successfully.')
+            return HttpResponseRedirect(reverse('index'))
+
+        messages.error(request, 'Please correct the errors below.')
+    else:
+        form = SettingsForm(**form_kwargs)
+
+    printer_message = getattr(form, 'printer_message', None)
+    if printer_message:
+        level, message_text = printer_message
+        if level == 'error':
+            messages.error(request, message_text)
+        else:
+            messages.warning(request, message_text)
+
+    context = {'settings': app_settings, 'form': form}
     return render(request, 'settings.html', context)
