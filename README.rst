@@ -146,8 +146,9 @@ Setup
 
 
 | The repository includes a simple ``start.bash`` helper for Raspberry Pi
-| deployments. Update the IP address in that script to match your static
-| address before using it. You can then launch the server with:
+| deployments. Set the ``PRINTER_GUI_BIND_ADDRESS`` environment variable
+| to override the default bind address (``0.0.0.0:8000``) before using it,
+| if desired. You can then launch the server with:
 
 .. code:: bash
 
@@ -165,8 +166,18 @@ Setup
 | Assuming the server runs correctly, you may configure the
 | server to run automatically on startup as a systemd service.
 | On the Raspberry Pi, copy the 'printerserver.service' file
-| to '/etc/systemd/system/', update ``ExecStart`` if needed,
-| start it, and enable it.
+| to '/etc/systemd/system/', review the ``User``, ``Group``, and
+| ``WorkingDirectory`` directives, and adjust them if your
+| environment differs from the defaults. The service reads
+| optional overrides from ``/etc/default/printerserver``; you can
+| define ``PRINTER_GUI_BIND_ADDRESS`` there to change the bind
+| address without editing the unit file. For example:
+
+.. code:: bash
+
+    echo "PRINTER_GUI_BIND_ADDRESS=192.168.1.4:8000" | sudo tee /etc/default/printerserver
+
+| Start and enable it once it matches your setup.
 
 .. code:: bash
 

@@ -1,9 +1,18 @@
 [Unit]
 Description=Django GUI printer web server
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=/home/pi/printer-gui/start.bash
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/printer-gui
+Environment=PRINTER_GUI_BIND_ADDRESS=0.0.0.0:8000
+EnvironmentFile=-/etc/default/printerserver
+ExecStart=/home/pi/printer-gui/venv/bin/python /home/pi/printer-gui/manage.py runserver $PRINTER_GUI_BIND_ADDRESS
+Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
