@@ -2,11 +2,18 @@ from django.conf import settings as django_settings
 
 import subprocess as sp
 import os
+import re
 from .utils import DEFAULT_APP_SETTINGS, get_app_settings
 
 
 UPLOADS_DIR = django_settings.STATICFILES_DIRS[0] + '/uploads/'
 DEFAULT_PRINTER_PROFILE = DEFAULT_APP_SETTINGS["printer_profile"]
+
+ALLOWED_COLORS = {"Gray", "RGB"}
+ALLOWED_ORIENTATIONS = {"3", "4"}
+ALLOWED_PAGE_RANGES = {"0", "1"}
+_PRINTER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+_PAGE_SELECTION_PATTERN = re.compile(r"^[0-9]+(?:[-,][0-9]+)*$")
 
 
 _printer_profile = None
@@ -44,6 +51,23 @@ def print_pdf(filename, page_range, pages, color, orientation):
         error_message = "Printer profile is not configured.".encode()
         return b"", error_message
 
+    if not _PRINTER_NAME_PATTERN.fullmatch(printer):
+        return b"", b"Invalid printer profile configured."
+
+    if color not in ALLOWED_COLORS:
+        return b"", b"Invalid color option requested."
+
+    if orientation not in ALLOWED_ORIENTATIONS:
+        return b"", b"Invalid orientation option requested."
+
+    if page_range not in ALLOWED_PAGE_RANGES:
+        return b"", b"Invalid page range selection requested."
+
+    sanitized_pages = re.sub(r"\s+", "", pages or "")
+    if page_range != '0':
+        if not sanitized_pages or not _PAGE_SELECTION_PATTERN.fullmatch(sanitized_pages):
+            return b"", b"Invalid page selection requested."
+
     if page_range == '0':
         command = [
             'lp', '-d', printer, '-o',
@@ -52,7 +76,7 @@ def print_pdf(filename, page_range, pages, color, orientation):
         ]
     else:
         command = [
-            'lp', '-d', printer, '-P', pages, '-o',
+            'lp', '-d', printer, '-P', sanitized_pages, '-o',
             ('orientation-requested=' + orientation),
             '-o', ('ColorModel=' + color), filename
         ]
