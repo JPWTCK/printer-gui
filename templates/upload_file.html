@@ -16,13 +16,13 @@
 			<div class="bg-white br-2 lightly-pad-container shadow">
 				<h2 class="text-center">New File Upload</h2>
 			</div>
-			<div class="bg-white br-2 p-3 mr-1 ml-1">
+                        <div class="bg-white br-2 p-3 me-1 ms-1">
 				<div class="form-container">
 					<form method='post' enctype='multipart/form-data'>
 						{% crispy form %}
 						<div class="d-flex justify-content-center p-3">
 							<button class="bttn-brand-blue" type="submit">Save</button>
-							<button class="bttn-danger ml-5" onclick="javascript:window.location.replace('/');">Cancel</button>
+                                                        <button class="bttn-danger ms-5" onclick="javascript:window.location.replace('/');">Cancel</button>
 						</div>
 					</form>
 				</div>

@@ -1,6 +1,9 @@
-from .models import Settings
+from .utils import DEFAULT_APP_SETTINGS, get_app_settings
 
 
 def add_to_context(request):
-    settings = Settings.objects.get(id=1)
-    return { 'app_title': settings.app_title }
+    app_settings = get_app_settings()
+    if app_settings is None:
+        return { 'app_title': DEFAULT_APP_SETTINGS['app_title'] }
+
+    return { 'app_title': app_settings.app_title }

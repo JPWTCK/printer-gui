@@ -4,11 +4,12 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.core.files.storage import FileSystemStorage
 from django.views.decorators.cache import never_cache
+from django.conf import settings as django_settings
 
 from .models import *
 from .forms import *
-from . import settings
 from . import file_printer
+from .utils import DEFAULT_APP_SETTINGS, get_app_settings
 
 import re
 from pathlib import Path
@@ -18,10 +19,7 @@ ALLOWED_EXTENSIONS = {
 }
 
 
-UPLOADS_DIR = settings.STATICFILES_DIRS[0] + '/uploads/'
-
-# App default settings (color mode, orientation, printer used):
-settings = Settings.objects.get(id=1)
+UPLOADS_DIR = django_settings.STATICFILES_DIRS[0] + '/uploads/'
 
 
 @never_cache
@@ -33,10 +31,14 @@ def index(request):
 
 def upload_file(request):
     printer_selected = True
+    app_settings = get_app_settings()
 
     if request.method != 'POST':
-        settings.refresh_from_db()
-        if settings.printer_profile == 'None found':
+        if app_settings is not None:
+            app_settings.refresh_from_db()
+            if app_settings.printer_profile == DEFAULT_APP_SETTINGS['printer_profile']:
+                printer_selected = False
+        else:
             printer_selected = False
 
         form = FileUploadForm()
@@ -53,12 +55,19 @@ def upload_file(request):
         upload.name = filename
 
         # Get settings object to apply defaults to the new file object:
+        default_color = DEFAULT_APP_SETTINGS['default_color']
+        default_orientation = DEFAULT_APP_SETTINGS['default_orientation']
+
+        if app_settings is not None:
+            app_settings.refresh_from_db()
+            default_color = app_settings.default_color or default_color
+            default_orientation = app_settings.default_orientation or default_orientation
 
         filename = fs_storage.save(filename, upload)
         new_file = File(
             name=upload.name, page_range='0', pages='All',
-            color=settings.default_color,
-            orientation=settings.default_orientation
+            color=default_color,
+            orientation=default_orientation
         )
         new_file.save()
         return HttpResponseRedirect(reverse('index'))
@@ -121,14 +130,24 @@ def print_files(request):
 
 
 def edit_settings(request):
-    settings.refresh_from_db()
+    app_settings = get_app_settings()
+    if app_settings is not None:
+        app_settings.refresh_from_db()
+
     if request.method != 'POST':
-        form = SettingsForm(instance=settings)
+        if app_settings is None:
+            form = SettingsForm(initial=DEFAULT_APP_SETTINGS)
+        else:
+            form = SettingsForm(instance=app_settings)
     else:
-        form = SettingsForm(instance=settings, data=request.POST)
+        if app_settings is None:
+            form = SettingsForm(data=request.POST)
+        else:
+            form = SettingsForm(instance=app_settings, data=request.POST)
+
         form.save()
         file_printer.refresh_printer_profile()
         return HttpResponseRedirect(reverse('index'))
 
-    context = { 'settings': settings, 'form': form }
+    context = { 'settings': app_settings, 'form': form }
     return render(request, 'settings.html', context)
