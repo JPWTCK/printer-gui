@@ -4,3 +4,4 @@ django-crispy-forms==2.4
 crispy-bootstrap5==2025.6
 pytz==2025.2
 sqlparse==0.5.3
+gunicorn==21.2.0
