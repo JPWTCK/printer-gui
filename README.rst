@@ -84,7 +84,7 @@ Setup
 .. code:: bash
 
     cd /opt
-    git clone https://github.com/<your-account>/printer-gui.git
+    git clone https://github.com/JPWTCK/printer-gui.git
     cd printer-gui
 
 | You can also transfer the project directory from another machine with
