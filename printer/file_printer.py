@@ -1,4 +1,6 @@
 from django.conf import settings as django_settings
+from django.core.exceptions import SuspiciousFileOperation
+from django.utils._os import safe_join
 
 import subprocess as sp
 import os
@@ -60,14 +62,21 @@ def _resolve_path_within_uploads(filename, *, require_exists=True, not_found_mes
         return None, b"Uploads directory is unavailable."
 
     try:
-        candidate_input = Path(filename)
+        filename_to_resolve = os.fspath(filename)
     except (TypeError, ValueError):
         return None, b"Invalid filename: path resolution failed"
 
-    if candidate_input.is_absolute():
-        candidate_path = candidate_input
+    if not filename_to_resolve:
+        return None, b"Invalid filename: path resolution failed"
+
+    if os.path.isabs(filename_to_resolve):
+        candidate_path = Path(filename_to_resolve)
     else:
-        candidate_path = uploads_dir_path / candidate_input
+        try:
+            joined_path = safe_join(str(uploads_base), filename_to_resolve)
+        except SuspiciousFileOperation:
+            return None, b"Invalid filename: outside uploads directory"
+        candidate_path = Path(joined_path)
 
     try:
         resolved_path = candidate_path.resolve(strict=require_exists)
@@ -118,19 +127,35 @@ def refresh_printer_profile():
     _printer_profile = _load_printer_profile()
 
 
+def _run_print_command(resolved_path, printer, *, pages, color, orientation):
+    command = [
+        _LP_COMMAND,
+        '-d', printer,
+        '-o', f'orientation-requested={orientation}',
+        '-o', f'ColorModel={color}',
+    ]
+
+    if pages is not None:
+        command.extend(['-P', pages])
+
+    command.extend(['--', os.fspath(resolved_path)])
+
+    try:
+        completed = sp.run(command, check=False, capture_output=True)
+    except OSError as exc:
+        return b"", f"Failed to execute print command: {exc}".encode()
+
+    return completed.stdout, completed.stderr
+
+
 def print_pdf(filename, page_range, pages, color, orientation):
     if _LP_COMMAND is None:
         return b"", b"Printing is unavailable: 'lp' command not found."
 
-    try:
-        filename_to_print = os.fspath(filename)
-    except TypeError:
-        return b"", b"Invalid filename provided for printing."
-
     resolved_path, error = _resolve_path_within_uploads(
-        filename_to_print,
+        filename,
         require_exists=True,
-        not_found_message=b"File to print does not exist."
+        not_found_message=b"File to print does not exist.",
     )
     if error is not None:
         return b"", error
@@ -156,27 +181,16 @@ def print_pdf(filename, page_range, pages, color, orientation):
     if page_range != '0':
         if not sanitized_pages or not _PAGE_SELECTION_PATTERN.fullmatch(sanitized_pages):
             return b"", b"Invalid page selection requested."
-
-    if page_range == '0':
-        command = [
-            _LP_COMMAND, '-d', printer, '-o',
-            ('orientation-requested=' + orientation),
-            '-o', ('ColorModel=' + color), os.fspath(resolved_path)
-        ]
     else:
-        command = [
-            _LP_COMMAND, '-d', printer, '-P', sanitized_pages, '-o',
-            ('orientation-requested=' + orientation),
-            '-o', ('ColorModel=' + color), os.fspath(resolved_path)
-        ]
+        sanitized_pages = None
 
-    try:
-        print_proc = sp.Popen(command, stdout=sp.PIPE, stderr=sp.PIPE)
-        output = print_proc.communicate()
-    except OSError as exc:
-        return b"", f"Failed to execute print command: {exc}".encode()
-
-    return output
+    return _run_print_command(
+        resolved_path,
+        printer,
+        pages=sanitized_pages,
+        color=color,
+        orientation=orientation,
+    )
 
 
 def print_file(filename, page_range, pages, color, orientation):
@@ -195,8 +209,4 @@ def print_file(filename, page_range, pages, color, orientation):
     if not _SAFE_FILENAME_PATTERN.fullmatch(sanitized_name):
         return b"", b"Invalid filename: contains unsupported characters"
 
-    candidate_path, error = _resolve_path_within_uploads(sanitized_name)
-    if error is not None:
-        return b"", error
-
-    return print_pdf(candidate_path, page_range, pages, color, orientation)
+    return print_pdf(sanitized_name, page_range, pages, color, orientation)
