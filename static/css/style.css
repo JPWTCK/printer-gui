@@ -254,6 +254,28 @@ select {
     padding: 0.8rem;
 }
 
+.file-delete-form {
+    display: inline-block;
+    margin-bottom: 0;
+}
+
+.folder-box-button {
+    border: none;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+}
+
+.folder-box-button:focus {
+    outline: none;
+}
+
+.folder-box-button:hover {
+    color: inherit;
+}
+
 .card-row {
     border-radius: 2px;
     padding: 3%;

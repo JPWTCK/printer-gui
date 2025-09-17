@@ -1,10 +1,8 @@
 from django.db import models
-from . import settings
 
-import os
+from pathlib import Path
 
-
-UPLOADS_DIR = settings.STATICFILES_DIRS[0] + '/uploads/'
+from .paths import UPLOADS_DIR
 
 
 class File(models.Model):
@@ -16,23 +14,21 @@ class File(models.Model):
     orientation = models.CharField(max_length=1)
     file_type = models.CharField(max_length=20)
 
+    _FILE_TYPE_LABELS = {
+        '.pdf': 'PDF',
+        '.ps': 'PostScript',
+        '.txt': 'Plain text',
+        '.jpg': 'JPEG image',
+        '.jpeg': 'JPEG image',
+        '.png': 'PNG image',
+        '.gif': 'GIF image',
+        '.tif': 'TIFF image',
+        '.tiff': 'TIFF image',
+    }
+
     def determine_file_type(self, filename):
-        if filename.endswith('pdf'):
-            self.file_type = 'PDF'
-        elif filename.endswith('ps'):
-            self.file_type = 'PostScript'
-        elif filename.endswith('txt'):
-            self.file_type = 'Plain text'
-        elif filename.endswith('jpg') or filename.endswith('jpeg'):
-            self.file_type = 'JPEG image'
-        elif filename.endswith('png'):
-            self.file_type = 'PNG image'
-        elif filename.endswith('gif'):
-            self.file_type = 'GIF image'
-        elif filename.endswith('tif') or filename.endswith('tiff'):
-            self.file_type = 'TIFF image'
-        else:
-            self.file_type = 'Unknown format'
+        suffix = Path(filename).suffix.lower()
+        self.file_type = self._FILE_TYPE_LABELS.get(suffix, 'Unknown format')
 
     def save(self, *args, **kwargs):
         self.determine_file_type(self.name.lower())
@@ -41,8 +37,10 @@ class File(models.Model):
 
     def delete(self, using=None, keep_parents=False):
         try:
-            os.remove(f"{UPLOADS_DIR}{self.name}")
+            (UPLOADS_DIR / self.name).unlink()
         except FileNotFoundError:
+            pass
+        except OSError:
             pass
 
         return super(File, self).delete(using=using, keep_parents=keep_parents)

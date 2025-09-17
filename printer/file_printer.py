@@ -1,15 +1,13 @@
-from django.conf import settings as django_settings
-
-import subprocess as sp
 import os
+import subprocess as sp
 import re
 from typing import List, Optional, Tuple
 
+from .paths import UPLOADS_DIR
 from .utils import DEFAULT_APP_SETTINGS, get_app_settings
 
 
-UPLOADS_DIR = django_settings.STATICFILES_DIRS[0] + '/uploads/'
-UPLOADS_ROOT = os.path.abspath(UPLOADS_DIR)
+UPLOADS_ROOT = os.path.abspath(str(UPLOADS_DIR))
 DEFAULT_PRINTER_PROFILE = DEFAULT_APP_SETTINGS["printer_profile"]
 
 ALLOWED_COLORS = {"Gray", "RGB"}
