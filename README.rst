@@ -88,30 +88,18 @@ Setup
     pip3 install -r requirements.txt
 
 
-4) Run database migrations and create settings
-----------------------------------------------
-| With the virtualenv enabled (``source venv/bin/activate``), run the
-| migrations and create the initial ``Settings`` record:
+4) Run database migrations
+--------------------------
+| With the virtualenv enabled (``source venv/bin/activate``), create and
+| apply the database migrations:
 
 .. code:: bash
 
     python manage.py makemigrations
     python manage.py migrate
-    python manage.py shell
 
-.. code:: python
-
-    from printer.models import Settings
-    Settings.objects.get_or_create(
-        id=1,
-        defaults={
-            'app_title': 'GUI Print Server',
-            'default_color': 'RGB',
-            'default_orientation': '3',
-            'printer_profile': 'None found',
-        }
-    )
-    exit()
+| The application now creates the initial ``Settings`` record
+| automatically, so no manual shell steps are required.
 
 5) Give your device a static IP
 -------------------------------
