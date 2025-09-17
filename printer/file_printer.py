@@ -1,6 +1,4 @@
 from django.conf import settings as django_settings
-from django.core.exceptions import SuspiciousFileOperation
-from django.utils._os import safe_join
 
 import subprocess as sp
 import os
@@ -30,8 +28,8 @@ def _resolve_path_within_uploads(filename, *, require_exists=True, not_found_mes
     Parameters
     ----------
     filename: path-like
-        File name or path to resolve. Relative paths are interpreted relative
-        to the uploads directory.
+        File name to resolve. Only plain filenames without path separators are
+        accepted.
     require_exists: bool
         When ``True`` the path must exist. Missing paths produce
         *not_found_message*.
@@ -66,34 +64,47 @@ def _resolve_path_within_uploads(filename, *, require_exists=True, not_found_mes
     except (TypeError, ValueError):
         return None, b"Invalid filename: path resolution failed"
 
+    filename_to_resolve = filename_to_resolve.strip()
     if not filename_to_resolve:
         return None, b"Invalid filename: path resolution failed"
 
-    if os.path.isabs(filename_to_resolve):
-        candidate_path = Path(filename_to_resolve)
-    else:
-        try:
-            joined_path = safe_join(str(uploads_base), filename_to_resolve)
-        except SuspiciousFileOperation:
-            return None, b"Invalid filename: outside uploads directory"
-        candidate_path = Path(joined_path)
-
-    try:
-        resolved_path = candidate_path.resolve(strict=require_exists)
-    except FileNotFoundError:
-        message = not_found_message or b"Invalid filename: file does not exist"
-        return None, message
-    except (OSError, RuntimeError):
-        return None, b"Invalid filename: path resolution failed"
-
-    try:
-        resolved_path.relative_to(uploads_base)
-    except ValueError:
+    prospective_path = Path(filename_to_resolve)
+    if prospective_path.is_absolute():
         return None, b"Invalid filename: outside uploads directory"
 
-    if require_exists and not resolved_path.is_file():
-        message = not_found_message or b"Invalid filename: file does not exist"
-        return None, message
+    if filename_to_resolve in {".", ".."}:
+        return None, b"Invalid filename: outside uploads directory"
+
+    for separator in (os.sep, os.altsep):
+        if separator and separator in filename_to_resolve:
+            return None, b"Invalid filename: outside uploads directory"
+
+    if not _SAFE_FILENAME_PATTERN.fullmatch(filename_to_resolve):
+        return None, b"Invalid filename: contains unsupported characters"
+
+    resolved_path = None
+
+    if require_exists:
+        try:
+            for candidate in uploads_base.iterdir():
+                if candidate.name == filename_to_resolve:
+                    resolved_path = candidate
+                    break
+        except (OSError, RuntimeError):
+            return None, b"Invalid filename: path resolution failed"
+
+        if resolved_path is None:
+            message = not_found_message or b"Invalid filename: file does not exist"
+            return None, message
+
+        try:
+            if resolved_path.is_symlink() or not resolved_path.is_file():
+                message = not_found_message or b"Invalid filename: file does not exist"
+                return None, message
+        except OSError:
+            return None, b"Invalid filename: path resolution failed"
+    else:
+        resolved_path = uploads_base / filename_to_resolve
 
     return resolved_path, None
 
@@ -138,10 +149,18 @@ def _run_print_command(resolved_path, printer, *, pages, color, orientation):
     if pages is not None:
         command.extend(['-P', pages])
 
-    command.extend(['--', os.fspath(resolved_path)])
+    command.append('-')
 
     try:
-        completed = sp.run(command, check=False, capture_output=True)
+        with resolved_path.open('rb') as printable:
+            completed = sp.run(
+                command,
+                check=False,
+                capture_output=True,
+                stdin=printable,
+            )
+    except FileNotFoundError:
+        return b"", b"File to print does not exist."
     except OSError as exc:
         return b"", f"Failed to execute print command: {exc}".encode()
 
