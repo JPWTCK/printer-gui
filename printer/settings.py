@@ -11,9 +11,11 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 """
 
 from pathlib import Path
+from urllib.parse import urlsplit
 from django.contrib.messages import constants as messages_constants
 from django.core.management.utils import get_random_secret_key
 
+import ipaddress
 import os
 
 MESSAGE_TAGS = {
@@ -39,10 +41,148 @@ if not SECRET_KEY:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = [
-    '127.0.0.1',
-    '192.168.1.4'
-]
+
+def _prepare_netloc(netloc: str) -> str:
+    value = (netloc or "").strip()
+    if not value or value.startswith("["):
+        return value
+
+    if "%" in value:
+        base, zone_and_port = value.split("%", 1)
+        zone = zone_and_port
+        port = None
+        if ":" in zone_and_port:
+            zone_candidate, sep, port_candidate = zone_and_port.rpartition(":")
+            if sep and port_candidate.isdigit():
+                zone = zone_candidate
+                port = port_candidate
+        try:
+            parsed_ip = ipaddress.ip_address(base)
+        except ValueError:
+            return value
+        if not isinstance(parsed_ip, ipaddress.IPv6Address):
+            return value
+        compressed = parsed_ip.compressed
+        if port is not None:
+            return f"[{compressed}%{zone}]:{port}"
+        return f"[{compressed}%{zone}]"
+
+    try:
+        parsed_ip = ipaddress.ip_address(value)
+    except ValueError:
+        host_part, sep, port_candidate = value.rpartition(":")
+        if sep and port_candidate:
+            try:
+                parsed_ip = ipaddress.ip_address(host_part)
+            except ValueError:
+                return value
+            if isinstance(parsed_ip, ipaddress.IPv6Address):
+                return f"[{parsed_ip.compressed}]:{port_candidate}"
+        return value
+    else:
+        if isinstance(parsed_ip, ipaddress.IPv6Address):
+            return f"[{parsed_ip.compressed}]"
+        return value
+
+
+def _normalize_allowed_host(raw_value: str) -> str:
+    value = (raw_value or "").strip()
+    if not value:
+        return ""
+
+    if "://" in value:
+        value = value.split("://", 1)[1]
+
+    if "@" in value:
+        value = value.rsplit("@", 1)[-1]
+
+    for separator in ("/", "?", "#"):
+        if separator in value:
+            value = value.split(separator, 1)[0]
+
+    netloc = _prepare_netloc(value)
+    if not netloc:
+        return ""
+
+    try:
+        parsed = urlsplit(netloc if "://" in netloc else f"//{netloc}")
+    except ValueError:
+        host = netloc
+    else:
+        host = parsed.hostname or ""
+
+    host = (host or "").strip()
+    if not host:
+        return ""
+
+    zone = ""
+    ip_candidate = host
+    if "%" in host:
+        ip_candidate, zone = host.split("%", 1)
+
+    try:
+        parsed_ip = ipaddress.ip_address(ip_candidate)
+    except ValueError:
+        return host.lower()
+
+    compressed = parsed_ip.compressed
+    if isinstance(parsed_ip, ipaddress.IPv6Address):
+        if zone:
+            return f"[{compressed}%{zone}]"
+        return f"[{compressed}]"
+    return compressed
+
+
+def _ip_address_from_host(host: str):
+    value = (host or "").strip()
+    if not value:
+        raise ValueError("Empty host")
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    if "%" in value:
+        value = value.split("%", 1)[0]
+    return ipaddress.ip_address(value)
+
+
+def _is_unspecified_address(host: str) -> bool:
+    try:
+        address = _ip_address_from_host(host)
+    except ValueError:
+        return False
+    return address.is_unspecified
+
+
+def _add_allowed_host(hosts, seen, candidate, *, normalized=False):
+    host = candidate if normalized else _normalize_allowed_host(candidate)
+    if not host:
+        return
+    key = host.lower()
+    if key in seen:
+        return
+    hosts.append(host)
+    seen.add(key)
+
+
+def _build_allowed_hosts() -> list:
+    hosts = []
+    seen = set()
+
+    _add_allowed_host(hosts, seen, "127.0.0.1")
+    _add_allowed_host(hosts, seen, "localhost")
+
+    bind_candidate = _normalize_allowed_host(os.environ.get("PRINTER_GUI_BIND_ADDRESS", "0.0.0.0:8000"))
+    if bind_candidate and not _is_unspecified_address(bind_candidate):
+        _add_allowed_host(hosts, seen, bind_candidate, normalized=True)
+
+    extra_hosts = os.environ.get("PRINTER_GUI_ALLOWED_HOSTS", "")
+    if extra_hosts:
+        for host in extra_hosts.split(","):
+            _add_allowed_host(hosts, seen, host)
+
+    return hosts
+
+
+ALLOWED_HOSTS = _build_allowed_hosts()
 
 
 # Application definition
