@@ -14,6 +14,7 @@ from pathlib import Path
 from django.contrib.messages import constants as messages_constants
 from django.core.management.utils import get_random_secret_key
 
+import ipaddress
 import os
 
 MESSAGE_TAGS = {
@@ -39,10 +40,46 @@ if not SECRET_KEY:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = [
-    '127.0.0.1',
-    '192.168.1.4'
-]
+
+def _extract_bind_host(bind_address: str) -> str:
+    value = (bind_address or "").strip()
+    if not value:
+        return ""
+
+    if value.startswith("["):
+        closing = value.find("]")
+        if closing != -1:
+            return value[1:closing]
+        return value[1:]
+
+    try:
+        ipaddress.ip_address(value)
+        return value
+    except ValueError:
+        host_part, sep, port = value.rpartition(":")
+        if sep and port.isdigit():
+            return host_part
+    return value
+
+
+def _is_unspecified_address(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_unspecified
+    except ValueError:
+        return False
+
+
+ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+
+bind_host = _extract_bind_host(os.environ.get("PRINTER_GUI_BIND_ADDRESS", "0.0.0.0:8000"))
+if bind_host and not _is_unspecified_address(bind_host) and bind_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(bind_host)
+
+extra_hosts = os.environ.get("PRINTER_GUI_ALLOWED_HOSTS", "")
+if extra_hosts:
+    for host in (item.strip() for item in extra_hosts.split(",")):
+        if host and host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(host)
 
 
 # Application definition
