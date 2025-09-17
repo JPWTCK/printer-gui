@@ -14,8 +14,10 @@ from pathlib import Path
 from django.contrib.messages import constants as messages_constants
 from django.core.management.utils import get_random_secret_key
 
+import contextlib
 import ipaddress
 import os
+import socket
 
 MESSAGE_TAGS = {
     messages_constants.DEBUG: 'alert-secondary',
@@ -80,6 +82,70 @@ if extra_hosts:
     for host in (item.strip() for item in extra_hosts.split(",")):
         if host and host not in ALLOWED_HOSTS:
             ALLOWED_HOSTS.append(host)
+
+
+def _add_candidate_host(host: str, *, seen: set[str], target: list[str]) -> None:
+    value = (host or "").strip()
+    if not value or value in seen:
+        return
+    seen.add(value)
+    target.append(value)
+
+
+def _discover_local_addresses() -> list[str]:
+    discovered: list[str] = []
+    seen: set[str] = set(ALLOWED_HOSTS)
+
+    hostname_candidates = []
+    with contextlib.suppress(OSError):
+        hostname_candidates.append(socket.gethostname())
+    with contextlib.suppress(OSError):
+        hostname_candidates.append(socket.getfqdn())
+
+    for candidate in hostname_candidates:
+        _add_candidate_host(candidate, seen=seen, target=discovered)
+        candidate = (candidate or "").strip()
+        if candidate and "." not in candidate:
+            _add_candidate_host(f"{candidate}.local", seen=seen, target=discovered)
+
+    # Resolve hostname candidates to IP addresses
+    for candidate in list(discovered):
+        with contextlib.suppress(socket.gaierror):
+            for info in socket.getaddrinfo(candidate, None):
+                address = info[4][0]
+                if _is_unspecified_address(address):
+                    continue
+                with contextlib.suppress(ValueError):
+                    ipaddress.ip_address(address)
+                    _add_candidate_host(address, seen=seen, target=discovered)
+
+    # Attempt to determine the outbound addresses for IPv4 and IPv6
+    outbound_targets = (
+        (socket.AF_INET, ("8.8.8.8", 80)),
+        (socket.AF_INET6, ("2001:4860:4860::8888", 80)),
+    )
+
+    for family, destination in outbound_targets:
+        try:
+            sock = socket.socket(family, socket.SOCK_DGRAM)
+        except OSError:
+            continue
+        with sock:
+            try:
+                sock.connect(destination)
+            except OSError:
+                continue
+            address = sock.getsockname()[0]
+        if _is_unspecified_address(address):
+            continue
+        with contextlib.suppress(ValueError):
+            ipaddress.ip_address(address)
+            _add_candidate_host(address, seen=seen, target=discovered)
+
+    return discovered
+
+
+ALLOWED_HOSTS.extend(_discover_local_addresses())
 
 
 # Application definition

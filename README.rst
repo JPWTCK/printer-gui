@@ -101,34 +101,21 @@ Setup
 | The application now creates the initial ``Settings`` record
 | automatically, so no manual shell steps are required.
 
-5) Give your device a static IP
--------------------------------
-| You will, of course, need a static IP address. On Raspberry Pi
-| OS, you can configure your IP address in /etc/dhcpcd.conf by
-| setting "static ip_address", "static domain_name_servers", and
-| "static routers". A simple example is given below:
-
-.. code:: bash
-
-    interface wlan0
-      static ip_address=192.168.1.4
-      static domain_name_servers=192.168.1.1
-      static routers=192.168.1.1
+5) Locate your device on the network (optional)
+-----------------------------------------------
+| The application automatically adds any hostnames and IP addresses that
+| belong to the machine to Django's ``ALLOWED_HOSTS`` list. On Raspberry
+| Pi OS and many other Linux distributions, you can usually reach the
+| device with ``http://<HOSTNAME>.local:8000`` immediately. Assigning a
+| static IP address is no longer required, though you can still set one if
+| you prefer a predictable address.
 
 
-6) Add your IP address in printer/settings.py
----------------------------------------------
-| The server automatically allows loopback requests and adds the host
-| from ``PRINTER_GUI_BIND_ADDRESS`` (``0.0.0.0:8000`` by default) when
-| it names a specific interface. Provide additional hostnames with the
-| ``PRINTER_GUI_ALLOWED_HOSTS`` environment variable using a comma-
-| separated list if your deployment requires them.
-
-
-7) Start the development server
--------------------------------
+6) Start the development server
+------------------------------
 | Activate the virtualenv and run the Django development server on your
-| static IP (or ``0.0.0.0`` if you prefer to listen on every interface):
+| preferred bind address (``0.0.0.0`` listens on every interface by
+| default):
 
 .. code:: bash
 
@@ -150,7 +137,7 @@ Setup
     System check identified no issues (0 silenced).
     January 04, 2021 - 17:40:26
     Django version 5.2.6, using settings 'printer.settings'
-    Starting development server at http://<STATIC_IP>:8000/
+    Starting development server at http://0.0.0.0:8000/
     Quit the server with CONTROL-C.
 
 
@@ -184,12 +171,12 @@ Setup
 | ``systemctl status printerserver``, and
 | ``sudo journalctl -u printerserver``
 
-8) Configure the server to use your printer
+7) Configure the server to use your printer
 -------------------------------------------
 | The printer server has not yet been configured to use your
 | CUPS printer profile. With the server running, visit its
 | URL in a web browser from a device on the same network
-| (e.g. http://192.168.1.4:8000). Locate and click the
+| (e.g. http://<HOSTNAME>.local:8000). Locate and click the
 | settings icon as pictured below:
 
 .. image:: screenshots/configure-printer.png
