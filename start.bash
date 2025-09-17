@@ -11,6 +11,7 @@ if [[ -f "venv/bin/activate" ]]; then
 fi
 
 BIND_ADDRESS="${PRINTER_GUI_BIND_ADDRESS:-0.0.0.0:8000}"
+WORKERS="${PRINTER_GUI_GUNICORN_WORKERS:-2}"
 
-exec python3 manage.py runserver "$BIND_ADDRESS"
+exec gunicorn --bind "$BIND_ADDRESS" --workers "$WORKERS" printer.wsgi:application
 

@@ -131,34 +131,37 @@ Setup
 | you prefer a predictable address.
 
 
-7) Start the development server
-------------------------------
-| Activate the virtualenv and run the Django development server on your
-| preferred bind address (``0.0.0.0`` listens on every interface by
-| default):
+7) Start the Gunicorn application server
+---------------------------------------
+| Activate the virtualenv and start Gunicorn using the bundled WSGI entry
+| point. Adjust the worker count for your hardware (two workers are a good
+| starting point for a Raspberry Pi 4):
 
 .. code:: bash
 
     source venv/bin/activate
-    python manage.py runserver 0.0.0.0:8000
+    gunicorn --workers 2 --bind 0.0.0.0:8000 printer.wsgi:application
 
 
 | The repository includes a simple ``start.bash`` helper for Raspberry Pi
 | deployments. Set the ``PRINTER_GUI_BIND_ADDRESS`` environment variable
-| to override the default bind address (``0.0.0.0:8000``) before using it,
-| if desired. You can then launch the server with:
+| to override the default bind address (``0.0.0.0:8000``) and
+| ``PRINTER_GUI_GUNICORN_WORKERS`` to control the number of worker
+| processes before using it, if desired. You can then launch the server
+| with:
 
 .. code:: bash
 
     ./start.bash
-    Watching for file changes with StatReloader
-    Performing system checks...
+    [2025-01-04 17:40:26 +0000] [1234] [INFO] Starting gunicorn 23.0.0
+    [2025-01-04 17:40:26 +0000] [1234] [INFO] Listening at: http://0.0.0.0:8000 (1234)
+    [2025-01-04 17:40:26 +0000] [1234] [INFO] Using worker: sync
+    [2025-01-04 17:40:26 +0000] [1235] [INFO] Booting worker with pid: 1235
 
-    System check identified no issues (0 silenced).
-    January 04, 2021 - 17:40:26
-    Django version 5.2.6, using settings 'printer.settings'
-    Starting development server at http://0.0.0.0:8000/
-    Quit the server with CONTROL-C.
+
+| For local development with automatic reloads you can still run
+| ``python manage.py runserver``, but prefer Gunicorn (or another
+| production-grade server) for network-accessible deployments.
 
 
 | Assuming the server runs correctly, you may configure the
@@ -169,12 +172,14 @@ Setup
 | environment differs from the defaults. The service reads
 | optional overrides from ``/etc/default/printerserver``; you can
 | define ``PRINTER_GUI_BIND_ADDRESS`` there to change the bind
-| address and ``PRINTER_GUI_ALLOWED_HOSTS`` to permit additional
+| address, ``PRINTER_GUI_GUNICORN_WORKERS`` to tune the worker
+| count, and ``PRINTER_GUI_ALLOWED_HOSTS`` to permit additional
 | hostnames without editing the unit file. For example:
 
 .. code:: bash
 
     echo "PRINTER_GUI_BIND_ADDRESS=192.168.1.4:8000" | sudo tee /etc/default/printerserver
+    echo "PRINTER_GUI_GUNICORN_WORKERS=3" | sudo tee -a /etc/default/printerserver
     echo "PRINTER_GUI_ALLOWED_HOSTS=printer.example.com,printer.local" | sudo tee -a /etc/default/printerserver
 
 | Start and enable it once it matches your setup.
