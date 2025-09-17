@@ -75,7 +75,24 @@ Setup
 | named ``cups`` or ``cups-client``).
 
 
-3) Setup the virtualenv
+3) Download the project files
+-----------------------------
+| Move the application's source code onto the single-board computer before
+| continuing. If ``git`` is available, cloning your fork of the repository
+| keeps it easy to pull in future updates:
+
+.. code:: bash
+
+    cd /opt
+    git clone https://github.com/<your-account>/printer-gui.git
+    cd printer-gui
+
+| You can also transfer the project directory from another machine with
+| ``scp``, ``rsync``, or a USB drive. The remaining steps assume commands are
+| run from the project's root directory on the SBC.
+
+
+4) Setup the virtualenv
 -----------------------
 | The project no longer includes an install script. Create your Python
 | virtualenv in the root directory for this project, activate it, and
@@ -88,7 +105,7 @@ Setup
     pip3 install -r requirements.txt
 
 
-4) Database initialization (automatic)
+5) Database initialization (automatic)
 --------------------------------------
 | The application now ships with its database migrations and applies them
 | automatically the first time the server starts, so there is no separate
@@ -104,7 +121,7 @@ Setup
 | Set the ``PRINTER_GUI_AUTO_APPLY_MIGRATIONS`` environment variable to ``0``
 | to opt out of the automatic migration behavior when needed.
 
-5) Locate your device on the network (optional)
+6) Locate your device on the network (optional)
 -----------------------------------------------
 | The application automatically adds any hostnames and IP addresses that
 | belong to the machine to Django's ``ALLOWED_HOSTS`` list. On Raspberry
@@ -114,7 +131,7 @@ Setup
 | you prefer a predictable address.
 
 
-6) Start the development server
+7) Start the development server
 ------------------------------
 | Activate the virtualenv and run the Django development server on your
 | preferred bind address (``0.0.0.0`` listens on every interface by
