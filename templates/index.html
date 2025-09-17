@@ -85,14 +85,15 @@
                             <span class="fs-100"><i class="bi bi-clock"></i>&ensp;{{ file.uploaded_at }}</span>
                         </div>
                     </a>
-                    <a href="{% url 'delete_file' file.id %}" class="text-danger mb-2">
-                        <div class="folder-box-sm br-2 bg-white">
+                    <form method="post" action="{% url 'delete_file' file.id %}" class="file-delete-form">
+                        {% csrf_token %}
+                        <button type="submit" class="folder-box-sm br-2 bg-white folder-box-button text-danger mb-2">
                             Delete
                             <svg xmlns="http://www.w3.org/2000/svg" width="1.6em" height="1.6em" fill="currentColor" class="bi bi-x-circle-fill" viewBox="0 0 16 16" style="float: right;">
                                 <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/>
                             </svg>
-                        </div>
-                    </a>
+                        </button>
+                    </form>
                 </div>
             {% endfor %}
             </div>
