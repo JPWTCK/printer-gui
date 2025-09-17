@@ -104,6 +104,14 @@ Setup
     source venv/bin/activate
     pip3 install -r requirements.txt
 
+| Collect the project's static assets so Gunicorn (via WhiteNoise) can serve
+| them directly. Re-run this command whenever you upgrade the application or
+| modify files under ``static/``:
+
+.. code:: bash
+
+    python manage.py collectstatic --no-input
+
 
 5) Database initialization (automatic)
 --------------------------------------
@@ -141,6 +149,14 @@ Setup
 
     source venv/bin/activate
     gunicorn --workers 2 --bind 0.0.0.0:8000 printer.wsgi:application
+
+| After Gunicorn starts, visit the site in a browser and make sure the UI is
+| styled. You can also request a known static asset directly to confirm
+| WhiteNoise is serving the collected files:
+
+.. code:: bash
+
+    curl -I http://<HOSTNAME>.local:8000/static/css/style.css
 
 
 | The repository includes a simple ``start.bash`` helper for Raspberry Pi
@@ -181,6 +197,14 @@ Setup
     echo "PRINTER_GUI_BIND_ADDRESS=192.168.1.4:8000" | sudo tee /etc/default/printerserver
     echo "PRINTER_GUI_GUNICORN_WORKERS=3" | sudo tee -a /etc/default/printerserver
     echo "PRINTER_GUI_ALLOWED_HOSTS=printer.example.com,printer.local" | sudo tee -a /etc/default/printerserver
+
+| Before starting or restarting the service, activate the virtualenv and run
+| ``collectstatic`` so WhiteNoise has the latest assets to serve:
+
+.. code:: bash
+
+    source /home/pi/printer-gui/venv/bin/activate
+    python /home/pi/printer-gui/manage.py collectstatic --no-input
 
 | Start and enable it once it matches your setup.
 
