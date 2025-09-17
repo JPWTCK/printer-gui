@@ -1,29 +1,10 @@
 from django import forms
 from .models import *
-import subprocess
+
+from .file_printer import get_available_printer_profiles
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Layout, Fieldset, Row, Column
-
-# Get available printer profiles:
-available_printer_profiles = [] # List of tuples for available printer profiles
-try:
-    proc = subprocess.Popen(['lpstat', '-a'], shell=False,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-
-    stdout = proc.communicate()[0].decode('utf-8')
-    stdout_list = stdout.split('\n')
-    list_len = len(stdout_list)
-    stdout_list.remove(stdout_list[(list_len - 1)]) # Remove blank element at end.
-
-    for i in range(0, (list_len - 1)):
-        stdout_list[i] = stdout_list[i].split(' accepting')[0]
-
-    for profile in stdout_list:
-        available_printer_profiles.append((profile, profile))
-except:
-    available_printer_profiles.append(('None found', 'None found'))
-
 
 class PrintOptions:
     RANGE_OPTIONS = (
@@ -76,11 +57,9 @@ class SettingsForm(forms.ModelForm):
             choices=PrintOptions.ORIENTATION_OPTIONS
         )
     )
-    printer_profile = forms.CharField(
+    printer_profile = forms.ChoiceField(
         label='Printer Profile',
-        widget=forms.Select(
-            choices=available_printer_profiles
-        )
+        choices=(),
     )
 
     class Meta:
@@ -90,6 +69,8 @@ class SettingsForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        current_selection = self.initial.get('printer_profile') or getattr(self.instance, 'printer_profile', None)
+        self.fields['printer_profile'].choices = get_available_printer_profiles(current_selection)
         self.helper = FormHelper()
         self.helper.form_class='form-horizontal'
         self.helper.label_class='col-25 fs-400 ff-sans-normal'
