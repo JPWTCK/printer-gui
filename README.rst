@@ -153,7 +153,7 @@ Setup
 .. code:: bash
 
     ./start.bash
-    [2025-01-04 17:40:26 +0000] [1234] [INFO] Starting gunicorn 21.2.0
+    [2025-01-04 17:40:26 +0000] [1234] [INFO] Starting gunicorn 23.0.0
     [2025-01-04 17:40:26 +0000] [1234] [INFO] Listening at: http://0.0.0.0:8000 (1234)
     [2025-01-04 17:40:26 +0000] [1234] [INFO] Using worker: sync
     [2025-01-04 17:40:26 +0000] [1235] [INFO] Booting worker with pid: 1235
