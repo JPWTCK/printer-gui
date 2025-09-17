@@ -158,8 +158,12 @@ def print_pdf(filename, page_range, pages, color, orientation):
 
 def print_file(filename, page_range, pages, color, orientation):
     # Prevent filenames that could be interpreted as options or contain path traversal
+    if not filename or filename.strip() == "":
+        return b"", b"Invalid filename: cannot be empty"
     if filename.startswith('-'):
         return b"", b"Invalid filename: cannot start with '-'"
+    if filename.startswith('.'):
+        return b"", b"Invalid filename: cannot start with '.'"
     if os.path.basename(filename) != filename:
         return b"", b"Invalid filename: must not contain path separators"
     # Only allow filenames with alphanumerics and dot (no spaces, dashes, etc.)
