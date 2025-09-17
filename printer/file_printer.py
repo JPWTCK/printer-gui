@@ -9,6 +9,7 @@ from .utils import DEFAULT_APP_SETTINGS, get_app_settings
 
 
 UPLOADS_DIR = django_settings.STATICFILES_DIRS[0] + '/uploads/'
+UPLOADS_ROOT = os.path.abspath(UPLOADS_DIR)
 DEFAULT_PRINTER_PROFILE = DEFAULT_APP_SETTINGS["printer_profile"]
 
 ALLOWED_COLORS = {"Gray", "RGB"}
@@ -132,48 +133,102 @@ def print_pdf(filename, page_range, pages, color, orientation):
     if page_range not in ALLOWED_PAGE_RANGES:
         return b"", b"Invalid page range selection requested."
 
+    if not isinstance(filename, str):
+        return b"", b"Invalid file path provided."
+
+    try:
+        normalized_path = os.path.realpath(filename)
+        uploads_common = os.path.commonpath([UPLOADS_ROOT, normalized_path])
+    except (OSError, ValueError):
+        return b"", b"Invalid file path provided."
+
+    if uploads_common != UPLOADS_ROOT or not os.path.isfile(normalized_path):
+        return b"", b"Invalid file path provided."
+
     sanitized_pages = re.sub(r"\s+", "", pages or "")
     if page_range != '0':
         if not sanitized_pages or not _PAGE_SELECTION_PATTERN.fullmatch(sanitized_pages):
             return b"", b"Invalid page selection requested."
-
-    if page_range == '0':
-        command = [
-            'lp', '-d', printer, '-o',
-            ('orientation-requested=' + orientation),
-            '-o', ('ColorModel=' + color), filename
-        ]
+        page_arguments: List[str] = ['-P', sanitized_pages]
     else:
-        command = [
-            'lp', '-d', printer, '-P', sanitized_pages, '-o',
-            ('orientation-requested=' + orientation),
-            '-o', ('ColorModel=' + color), filename
-        ]
+        page_arguments = []
+
+    color_option = {
+        'Gray': 'ColorModel=Gray',
+        'RGB': 'ColorModel=RGB',
+    }[color]
+
+    orientation_option = {
+        '3': 'orientation-requested=3',
+        '4': 'orientation-requested=4',
+    }[orientation]
+
+    command: List[str] = ['lp', '-d', printer]
+    command.extend(page_arguments)
+    command.extend(['-o', orientation_option, '-o', color_option, normalized_path])
 
     print_proc = sp.Popen(command, stdout=sp.PIPE, stderr=sp.PIPE)
     output = print_proc.communicate()
-    
+
     return output
 
 
+def _resolve_upload_file_path(filename: str) -> Optional[str]:
+    """Return an absolute path within ``UPLOADS_ROOT`` for a valid filename."""
+
+    try:
+        uploads_root = UPLOADS_ROOT
+        with os.scandir(uploads_root) as entries:
+            for entry in entries:
+                if entry.name != filename:
+                    continue
+                try:
+                    if not entry.is_file(follow_symlinks=False):
+                        return None
+                except OSError:
+                    return None
+
+                resolved_path = os.path.realpath(entry.path)
+                try:
+                    uploads_common = os.path.commonpath([uploads_root, resolved_path])
+                except (OSError, ValueError):
+                    return None
+
+                if uploads_common != uploads_root:
+                    return None
+
+                if not os.path.isfile(resolved_path):
+                    return None
+
+                return resolved_path
+    except OSError:
+        return None
+
+    return None
+
+
 def print_file(filename, page_range, pages, color, orientation):
-    # Prevent filenames that could be interpreted as options or contain path traversal
-    if not filename or filename.strip() == "":
+    if not isinstance(filename, str):
+        return b"", b"Invalid filename: must be a string"
+
+    candidate = filename.strip()
+    if not candidate:
         return b"", b"Invalid filename: cannot be empty"
-    if filename.startswith('-'):
+
+    if candidate.startswith('-'):
         return b"", b"Invalid filename: cannot start with '-'"
-    if filename.startswith('.'):
+
+    if candidate.startswith('.'):
         return b"", b"Invalid filename: cannot start with '.'"
-    if os.path.basename(filename) != filename:
+
+    if os.path.basename(candidate) != candidate:
         return b"", b"Invalid filename: must not contain path separators"
-    # Only allow filenames with alphanumerics and dot (no spaces, dashes, etc.)
-    if not re.fullmatch(r"[A-Za-z0-9.]+", filename):
-        return b"", b"Invalid filename: filename must only contain letters, numbers, or dots."
-    abs_path = os.path.abspath(os.path.join(UPLOADS_DIR, filename))
-    # Ensure the file is inside the uploads directory
-    if not abs_path.startswith(os.path.abspath(UPLOADS_DIR)):
-        return b"", b"Invalid filename: outside uploads directory"
-    # Optionally, check file existence
-    if not os.path.isfile(abs_path):
-        return b"", b"Invalid filename: file does not exist"
-    return print_pdf(abs_path, page_range, pages, color, orientation)
+
+    if not _SAFE_FILENAME_PATTERN.fullmatch(candidate):
+        return b"", b"Invalid filename: contains unsupported characters"
+
+    resolved_path = _resolve_upload_file_path(candidate)
+    if resolved_path is None:
+        return b"", b"Invalid filename: file is not available for printing"
+
+    return print_pdf(resolved_path, page_range, pages, color, orientation)
