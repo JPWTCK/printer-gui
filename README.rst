@@ -118,8 +118,11 @@ Setup
 
 6) Add your IP address in printer/settings.py
 ---------------------------------------------
-| Open the settings.py file and enter your server's IP address as
-| a string in the ALLOWED_HOSTS list.
+| The server automatically allows loopback requests and adds the host
+| from ``PRINTER_GUI_BIND_ADDRESS`` (``0.0.0.0:8000`` by default) when
+| it names a specific interface. Provide additional hostnames with the
+| ``PRINTER_GUI_ALLOWED_HOSTS`` environment variable using a comma-
+| separated list if your deployment requires them.
 
 
 7) Start the development server
@@ -159,11 +162,13 @@ Setup
 | environment differs from the defaults. The service reads
 | optional overrides from ``/etc/default/printerserver``; you can
 | define ``PRINTER_GUI_BIND_ADDRESS`` there to change the bind
-| address without editing the unit file. For example:
+| address and ``PRINTER_GUI_ALLOWED_HOSTS`` to permit additional
+| hostnames without editing the unit file. For example:
 
 .. code:: bash
 
     echo "PRINTER_GUI_BIND_ADDRESS=192.168.1.4:8000" | sudo tee /etc/default/printerserver
+    echo "PRINTER_GUI_ALLOWED_HOSTS=printer.example.com,printer.local" | sudo tee -a /etc/default/printerserver
 
 | Start and enable it once it matches your setup.
 
