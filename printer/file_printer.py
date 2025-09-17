@@ -7,6 +7,7 @@ from .utils import DEFAULT_APP_SETTINGS, get_app_settings
 
 
 UPLOADS_DIR = django_settings.STATICFILES_DIRS[0] + '/uploads/'
+_UPLOADS_ROOT = os.path.abspath(UPLOADS_DIR)
 DEFAULT_PRINTER_PROFILE = DEFAULT_APP_SETTINGS["printer_profile"]
 
 ALLOWED_COLORS = {"Gray", "RGB"}
@@ -14,6 +15,8 @@ ALLOWED_ORIENTATIONS = {"3", "4"}
 ALLOWED_PAGE_RANGES = {"0", "1"}
 _PRINTER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 _PAGE_SELECTION_PATTERN = re.compile(r"^[0-9]+(?:[-,][0-9]+)*$")
+_SAFE_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+_MAX_FILENAME_LENGTH = 255
 
 
 _printer_profile = None
@@ -93,9 +96,16 @@ def print_file(filename, page_range, pages, color, orientation):
         return b"", b"Invalid filename: cannot start with '-'"
     if os.path.basename(filename) != filename:
         return b"", b"Invalid filename: must not contain path separators"
+    if len(filename) > _MAX_FILENAME_LENGTH:
+        return b"", b"Invalid filename: exceeds maximum length"
+    if not _SAFE_FILENAME_PATTERN.fullmatch(filename):
+        return b"", b"Invalid filename: contains unsafe characters"
     abs_path = os.path.abspath(os.path.join(UPLOADS_DIR, filename))
     # Ensure the file is inside the uploads directory
-    if not abs_path.startswith(os.path.abspath(UPLOADS_DIR)):
+    try:
+        if os.path.commonpath([abs_path, _UPLOADS_ROOT]) != _UPLOADS_ROOT:
+            return b"", b"Invalid filename: outside uploads directory"
+    except ValueError:
         return b"", b"Invalid filename: outside uploads directory"
     # Optionally, check file existence
     if not os.path.isfile(abs_path):
