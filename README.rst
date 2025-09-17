@@ -88,18 +88,21 @@ Setup
     pip3 install -r requirements.txt
 
 
-4) Run database migrations
---------------------------
-| With the virtualenv enabled (``source venv/bin/activate``), create and
-| apply the database migrations:
+4) Database initialization (automatic)
+--------------------------------------
+| The application now ships with its database migrations and applies them
+| automatically the first time the server starts, so there is no separate
+| setup step to run.
+|
+| If you prefer to manage the database manually you can still apply the
+| migrations yourself:
 
 .. code:: bash
 
-    python manage.py makemigrations
     python manage.py migrate
 
-| The application now creates the initial ``Settings`` record
-| automatically, so no manual shell steps are required.
+| Set the ``PRINTER_GUI_AUTO_APPLY_MIGRATIONS`` environment variable to ``0``
+| to opt out of the automatic migration behavior when needed.
 
 5) Locate your device on the network (optional)
 -----------------------------------------------

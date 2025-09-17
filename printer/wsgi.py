@@ -11,6 +11,9 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
+from .auto_migrate import ensure_migrations_applied
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'printer.settings')
 
 application = get_wsgi_application()
+ensure_migrations_applied()

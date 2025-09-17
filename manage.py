@@ -15,6 +15,10 @@ def main():
             "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
+
+    from printer.auto_migrate import maybe_apply_migrations
+
+    maybe_apply_migrations(sys.argv)
     execute_from_command_line(sys.argv)
 
 
