@@ -22,6 +22,73 @@ _SAFE_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\- ]+$")
 _LP_COMMAND = which("lp")
 
 
+def _resolve_path_within_uploads(filename, *, require_exists=True, not_found_message=None):
+    """Resolve *filename* to a path within the uploads directory.
+
+    Parameters
+    ----------
+    filename: path-like
+        File name or path to resolve. Relative paths are interpreted relative
+        to the uploads directory.
+    require_exists: bool
+        When ``True`` the path must exist. Missing paths produce
+        *not_found_message*.
+    not_found_message: Optional[bytes]
+        Error message to use when the file cannot be located. When omitted a
+        generic message suitable for filename validation is used.
+
+    Returns
+    -------
+    Tuple[Path, Optional[bytes]]
+        The resolved path and ``None`` on success; otherwise ``None`` and an
+        error message.
+    """
+
+    uploads_dir_path = Path(UPLOADS_DIR)
+
+    try:
+        uploads_base = uploads_dir_path.resolve(strict=True)
+    except FileNotFoundError:
+        return None, b"Uploads directory is unavailable."
+    except (OSError, RuntimeError):
+        return None, b"Invalid filename: path resolution failed"
+
+    if uploads_base == uploads_base.anchor:
+        return None, b"Uploads directory is misconfigured."
+
+    if not uploads_base.is_dir():
+        return None, b"Uploads directory is unavailable."
+
+    try:
+        candidate_input = Path(filename)
+    except (TypeError, ValueError):
+        return None, b"Invalid filename: path resolution failed"
+
+    if candidate_input.is_absolute():
+        candidate_path = candidate_input
+    else:
+        candidate_path = uploads_dir_path / candidate_input
+
+    try:
+        resolved_path = candidate_path.resolve(strict=require_exists)
+    except FileNotFoundError:
+        message = not_found_message or b"Invalid filename: file does not exist"
+        return None, message
+    except (OSError, RuntimeError):
+        return None, b"Invalid filename: path resolution failed"
+
+    try:
+        resolved_path.relative_to(uploads_base)
+    except ValueError:
+        return None, b"Invalid filename: outside uploads directory"
+
+    if require_exists and not resolved_path.is_file():
+        message = not_found_message or b"Invalid filename: file does not exist"
+        return None, message
+
+    return resolved_path, None
+
+
 _printer_profile = None
 
 
@@ -60,6 +127,14 @@ def print_pdf(filename, page_range, pages, color, orientation):
     except TypeError:
         return b"", b"Invalid filename provided for printing."
 
+    resolved_path, error = _resolve_path_within_uploads(
+        filename_to_print,
+        require_exists=True,
+        not_found_message=b"File to print does not exist."
+    )
+    if error is not None:
+        return b"", error
+
     printer = _get_printer_profile()
     if not printer or printer == DEFAULT_PRINTER_PROFILE:
         error_message = "Printer profile is not configured.".encode()
@@ -82,20 +157,17 @@ def print_pdf(filename, page_range, pages, color, orientation):
         if not sanitized_pages or not _PAGE_SELECTION_PATTERN.fullmatch(sanitized_pages):
             return b"", b"Invalid page selection requested."
 
-    if not os.path.isfile(filename_to_print):
-        return b"", b"File to print does not exist."
-
     if page_range == '0':
         command = [
             _LP_COMMAND, '-d', printer, '-o',
             ('orientation-requested=' + orientation),
-            '-o', ('ColorModel=' + color), filename_to_print
+            '-o', ('ColorModel=' + color), os.fspath(resolved_path)
         ]
     else:
         command = [
             _LP_COMMAND, '-d', printer, '-P', sanitized_pages, '-o',
             ('orientation-requested=' + orientation),
-            '-o', ('ColorModel=' + color), filename_to_print
+            '-o', ('ColorModel=' + color), os.fspath(resolved_path)
         ]
 
     try:
@@ -123,18 +195,8 @@ def print_file(filename, page_range, pages, color, orientation):
     if not _SAFE_FILENAME_PATTERN.fullmatch(sanitized_name):
         return b"", b"Invalid filename: contains unsupported characters"
 
-    uploads_dir_path = Path(UPLOADS_DIR)
-
-    try:
-        base_path = uploads_dir_path.resolve(strict=False)
-        candidate_path = (uploads_dir_path / sanitized_name).resolve(strict=False)
-    except (OSError, RuntimeError):
-        return b"", b"Invalid filename: path resolution failed"
-
-    if not candidate_path.is_relative_to(base_path):
-        return b"", b"Invalid filename: outside uploads directory"
-
-    if not candidate_path.is_file():
-        return b"", b"Invalid filename: file does not exist"
+    candidate_path, error = _resolve_path_within_uploads(sanitized_name)
+    if error is not None:
+        return b"", error
 
     return print_pdf(candidate_path, page_range, pages, color, orientation)
