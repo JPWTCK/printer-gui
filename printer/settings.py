@@ -163,7 +163,7 @@ INSTALLED_APPS = [
     'crispy_bootstrap5',
 
     ## Programmer-defined ##
-    'printer',
+    'printer.apps.PrinterConfig',
 ]
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = ("bootstrap5",)
