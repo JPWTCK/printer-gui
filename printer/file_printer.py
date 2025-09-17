@@ -162,8 +162,9 @@ def print_file(filename, page_range, pages, color, orientation):
         return b"", b"Invalid filename: cannot start with '-'"
     if os.path.basename(filename) != filename:
         return b"", b"Invalid filename: must not contain path separators"
-    if not _SAFE_FILENAME_PATTERN.fullmatch(filename):
-        return b"", b"Invalid filename: contains unsafe characters"
+    # Only allow filenames with alphanumerics and dot (no spaces, dashes, etc.)
+    if not re.fullmatch(r"[A-Za-z0-9.]+", filename):
+        return b"", b"Invalid filename: filename must only contain letters, numbers, or dots."
     abs_path = os.path.abspath(os.path.join(UPLOADS_DIR, filename))
     # Ensure the file is inside the uploads directory
     if not abs_path.startswith(os.path.abspath(UPLOADS_DIR)):
