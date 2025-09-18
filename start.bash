@@ -10,6 +10,18 @@ if [[ -f "venv/bin/activate" ]]; then
     source "venv/bin/activate"
 fi
 
+PYTHON_BIN="python"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_BIN="python3"
+    else
+        echo "Unable to locate a Python interpreter in PATH." >&2
+        exit 1
+    fi
+fi
+
+"$PYTHON_BIN" manage.py collectstatic --no-input
+
 BIND_ADDRESS="${PRINTER_GUI_BIND_ADDRESS:-0.0.0.0:8000}"
 WORKERS="${PRINTER_GUI_GUNICORN_WORKERS:-2}"
 
