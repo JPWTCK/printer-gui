@@ -10,14 +10,15 @@ import re
 from pathlib import Path
 
 from . import file_printer
+from .conversion import ConversionError, convert_document_to_pdf
 from .forms import FileUploadForm, PrintOptions, SettingsForm
 from .models import File
 from .paths import UPLOADS_DIR, ensure_uploads_dir_exists
+from .upload_types import (
+    CUPS_NATIVE_EXTENSIONS,
+    SUPPORTED_UPLOAD_EXTENSIONS,
+)
 from .utils import DEFAULT_APP_SETTINGS, get_app_settings
-
-ALLOWED_EXTENSIONS = {
-    '.pdf', '.ps', '.txt', '.jpg', '.jpeg', '.png', '.gif', '.tif', '.tiff'
-}
 
 
 def _ensure_session_key(request):
@@ -89,10 +90,11 @@ def upload_file(request):
             return HttpResponseRedirect(reverse('index'))
 
         ext = Path(upload.name).suffix.lower()
-        if ext not in ALLOWED_EXTENSIONS:
+        if not ext or ext not in SUPPORTED_UPLOAD_EXTENSIONS:
             messages.error(request, 'File type not supported')
             return HttpResponseRedirect(reverse('index'))
 
+        requires_conversion = ext not in CUPS_NATIVE_EXTENSIONS
         upload.name = _sanitize_upload_name(upload.name)
 
         # Get settings object to apply defaults to the new file object:
@@ -113,15 +115,55 @@ def upload_file(request):
             messages.error(request, 'An unexpected error occurred while saving the file. Please try again.')
             return HttpResponseRedirect(reverse('index'))
 
+        final_name = saved_name
+        if requires_conversion:
+            pdf_candidate = Path(saved_name).with_suffix('.pdf').name
+            pdf_name = storage.get_available_name(pdf_candidate)
+            pdf_path = Path(storage.path(pdf_name))
+            try:
+                convert_document_to_pdf(Path(storage.path(saved_name)), pdf_path)
+            except ConversionError as exc:
+                storage.delete(saved_name)
+                try:
+                    pdf_path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    pass
+                messages.error(
+                    request,
+                    f'Unable to convert {saved_name} to PDF: {exc}',
+                )
+                return HttpResponseRedirect(reverse('index'))
+            except Exception:
+                storage.delete(saved_name)
+                try:
+                    pdf_path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    pass
+                messages.error(
+                    request,
+                    'An unexpected error occurred while converting the file. Please try again.',
+                )
+                return HttpResponseRedirect(reverse('index'))
+
+            storage.delete(saved_name)
+            final_name = pdf_name
+
         File.objects.create(
-            name=saved_name,
+            name=final_name,
             page_range='0',
             pages='All',
             color=default_color,
             orientation=default_orientation,
             session_key=session_key,
         )
-        messages.success(request, f'Queued {saved_name} for printing.')
+        if requires_conversion:
+            messages.success(request, f'Converted and queued {final_name} for printing.')
+        else:
+            messages.success(request, f'Queued {final_name} for printing.')
         return HttpResponseRedirect(reverse('index'))
 
     context = {'printer_selected': printer_selected, 'form': form}
