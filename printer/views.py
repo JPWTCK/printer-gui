@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.core.files.storage import FileSystemStorage
@@ -20,6 +20,35 @@ ALLOWED_EXTENSIONS = {
 }
 
 
+def _ensure_session_key(request):
+    session_key = request.session.session_key
+    if session_key is None:
+        request.session.create()
+        session_key = request.session.session_key
+    return session_key
+
+
+def _claim_file_for_session(file_obj, session_key):
+    if not file_obj.session_key:
+        file_obj.session_key = session_key
+        file_obj.save(update_fields=['session_key'])
+
+
+def _claim_legacy_files(session_key):
+    File.objects.filter(session_key='').update(session_key=session_key)
+
+
+def _get_session_file(request, file_id):
+    session_key = _ensure_session_key(request)
+    file_obj = get_object_or_404(File, id=file_id)
+
+    if file_obj.session_key and file_obj.session_key != session_key:
+        raise Http404
+
+    _claim_file_for_session(file_obj, session_key)
+    return file_obj
+
+
 def _sanitize_upload_name(upload_name: str) -> str:
     """Return a filesystem-safe filename that preserves the original suffix."""
 
@@ -32,12 +61,16 @@ def _sanitize_upload_name(upload_name: str) -> str:
 
 @never_cache
 def index(request):
-    files = File.objects.order_by('-uploaded_at')
+    session_key = _ensure_session_key(request)
+    _claim_legacy_files(session_key)
+
+    files = File.objects.filter(session_key=session_key).order_by('-uploaded_at')
     context = {'files': files}
     return render(request, 'index.html', context)
 
 
 def upload_file(request):
+    session_key = _ensure_session_key(request)
     printer_selected = True
     app_settings = get_app_settings()
     form = FileUploadForm()
@@ -86,6 +119,7 @@ def upload_file(request):
             pages='All',
             color=default_color,
             orientation=default_orientation,
+            session_key=session_key,
         )
         messages.success(request, f'Queued {saved_name} for printing.')
         return HttpResponseRedirect(reverse('index'))
@@ -95,7 +129,7 @@ def upload_file(request):
 
 
 def edit_file(request, file_id):
-    file_obj = get_object_or_404(File, id=file_id)
+    file_obj = _get_session_file(request, file_id)
     file_obj.refresh_from_db()
     context = {'file': file_obj}
     return render(request, 'edit_file.html', context)
@@ -108,7 +142,7 @@ def submit_edit_file_form(request):
     except (TypeError, ValueError):
         return HttpResponse(status=400)
 
-    file_obj = get_object_or_404(File, id=file_id)
+    file_obj = _get_session_file(request, file_id)
 
     page_range = request.POST.get('page_range', '').strip()
     pages = request.POST.get('pages', '').strip()
@@ -141,7 +175,7 @@ def submit_edit_file_form(request):
 
 @require_POST
 def delete_file(request, file_id):
-    file_obj = get_object_or_404(File, id=file_id)
+    file_obj = _get_session_file(request, file_id)
     file_name = file_obj.name
     file_obj.delete()
     messages.success(request, f'Removed {file_name} from the queue.')
@@ -151,7 +185,12 @@ def delete_file(request, file_id):
 
 @require_POST
 def print_files(request):
-    files = list(File.objects.order_by('uploaded_at'))
+    session_key = _ensure_session_key(request)
+    _claim_legacy_files(session_key)
+
+    files = list(
+        File.objects.filter(session_key=session_key).order_by('uploaded_at')
+    )
     if not files:
         messages.info(request, 'No files are queued for printing.')
         return HttpResponse(status=204)

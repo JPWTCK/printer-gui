@@ -12,6 +12,7 @@ class File(models.Model):
     pages = models.CharField(max_length=6)
     color = models.CharField(max_length=4)
     orientation = models.CharField(max_length=1)
+    session_key = models.CharField(max_length=40, blank=True, default='', db_index=True)
     file_type = models.CharField(max_length=20)
 
     _FILE_TYPE_LABELS = {

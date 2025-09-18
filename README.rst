@@ -16,6 +16,7 @@ Changes
 - Removed dependency on ``libreoffice``; only CUPS-supported formats are accepted.
 - Re-designed UI for better look/feel. -- Improved mobile/overall experience.
 - Added a favicon to better distinguish the browser tab.
+- Added per-session print queues so simultaneous users do not consume each other's jobs.
 
 
 Requirements
@@ -31,15 +32,6 @@ Limitations
 ###########
 - Only pdf, ps, txt, jpg, jpeg, png, gif, and tiff files are supported.
 - It seems that some printers may not respect page orientation chosen.
-- No sessions.
-
-
-| Because I have not yet implemented sessions, if someone clicks
-| "Print Files" while another person on the network is uploading
-| some files, whatever that other person has uploaded will print
-| and be cleared from the queue as well. Not a big deal in my
-| house but I may implement separate sessions in the future to
-| address this flaw.
 
 
 Setup
