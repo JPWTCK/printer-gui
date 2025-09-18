@@ -160,7 +160,7 @@ Setup
     curl -I http://<HOSTNAME>.local:8000/static/css/style.css
 
 
-| The repository includes a simple ``start.bash`` helper for Raspberry Pi
+| The repository includes a simple ``printergui.bash`` helper for Raspberry Pi
 | deployments. Set the ``PRINTER_GUI_BIND_ADDRESS`` environment variable
 | to override the default bind address (``0.0.0.0:8000``) and
 | ``PRINTER_GUI_GUNICORN_WORKERS`` to control the number of worker
@@ -170,7 +170,7 @@ Setup
 
 .. code:: bash
 
-    ./start.bash
+    ./printergui.bash
     [2025-01-04 17:40:26 +0000] [1234] [INFO] Starting gunicorn 23.0.0
     [2025-01-04 17:40:26 +0000] [1234] [INFO] Listening at: http://0.0.0.0:8000 (1234)
     [2025-01-04 17:40:26 +0000] [1234] [INFO] Using worker: sync
@@ -184,11 +184,11 @@ Setup
 
 | Assuming the server runs correctly, you may configure the
 | server to run automatically on startup as a systemd service.
-| On the Raspberry Pi, copy the 'printerserver.service' file
+| On the Raspberry Pi, copy the 'printergui.service' file
 | to '/etc/systemd/system/', review the ``User``, ``Group``,
 | ``WorkingDirectory``, and ``ExecStart`` directives, and adjust
 | them if your environment differs from the defaults. The service reads
-| optional overrides from ``/etc/default/printerserver``; you can
+| optional overrides from ``/etc/default/printergui``; you can
 | define ``PRINTER_GUI_BIND_ADDRESS`` there to change the bind
 | address, ``PRINTER_GUI_GUNICORN_WORKERS`` to tune the worker
 | count, and ``PRINTER_GUI_ALLOWED_HOSTS`` to permit additional
@@ -196,11 +196,11 @@ Setup
 
 .. code:: bash
 
-    echo "PRINTER_GUI_BIND_ADDRESS=192.168.1.4:8000" | sudo tee /etc/default/printerserver
-    echo "PRINTER_GUI_GUNICORN_WORKERS=3" | sudo tee -a /etc/default/printerserver
-    echo "PRINTER_GUI_ALLOWED_HOSTS=printer.example.com,printer.local" | sudo tee -a /etc/default/printerserver
+    echo "PRINTER_GUI_BIND_ADDRESS=192.168.1.4:8000" | sudo tee /etc/default/printergui
+    echo "PRINTER_GUI_GUNICORN_WORKERS=3" | sudo tee -a /etc/default/printergui
+    echo "PRINTER_GUI_ALLOWED_HOSTS=printer.example.com,printer.local" | sudo tee -a /etc/default/printergui
 
-| The unit invokes ``start.bash`` so each restart refreshes the static assets
+| The unit invokes ``printergui.bash`` so each restart refreshes the static assets
 | automatically before Gunicorn launches. If you customize the unit to call
 | Gunicorn directly, keep a ``collectstatic`` step in your workflow.
 
@@ -208,15 +208,15 @@ Setup
 
 .. code:: bash
 
-    sudo cp /home/pi/printer-gui/printerserver.service /etc/systemd/system/
-    sudo systemctl start printerserver
-    sudo systemctl enable printerserver
+    sudo cp /home/pi/printer-gui/printergui.service /etc/systemd/system/
+    sudo systemctl start printergui
+    sudo systemctl enable printergui
 
 
 | To check the status of the service and debug, use:
 |
-| ``systemctl status printerserver``, and
-| ``sudo journalctl -u printerserver``
+| ``systemctl status printergui``, and
+| ``sudo journalctl -u printergui``
 
 7) Configure the server to use your printer
 -------------------------------------------
