@@ -82,20 +82,22 @@ def get_available_printer_profiles(current_selection: Optional[str] = None) -> L
 
 
 def _load_printer_profile():
+    available_printers = _collect_available_printers()
+
     app_settings = get_app_settings()
     if app_settings is None:
-        return DEFAULT_PRINTER_PROFILE
+        printer_name = None
+    else:
+        app_settings.refresh_from_db()
+        printer_name = sanitize_printer_name(app_settings.printer_profile)
 
-    app_settings.refresh_from_db()
-    printer_name = sanitize_printer_name(app_settings.printer_profile)
-    if printer_name is None:
-        return DEFAULT_PRINTER_PROFILE
+    if printer_name and printer_name in available_printers:
+        return printer_name
 
-    available_printers = set(_collect_available_printers())
-    if available_printers and printer_name not in available_printers:
-        return DEFAULT_PRINTER_PROFILE
+    if len(available_printers) == 1:
+        return available_printers[0]
 
-    return printer_name
+    return DEFAULT_PRINTER_PROFILE
 
 
 def _get_printer_profile():
