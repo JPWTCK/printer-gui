@@ -104,9 +104,10 @@ Setup
     source venv/bin/activate
     pip3 install -r requirements.txt
 
-| Collect the project's static assets so Gunicorn (via WhiteNoise) can serve
-| them directly. Re-run this command whenever you upgrade the application or
-| modify files under ``static/``:
+| The included startup helpers run ``collectstatic`` before launching the
+| server so WhiteNoise always has the latest assets. If you start Django with
+| another command (for example, ``python manage.py runserver``), run the
+| following first to build the static asset manifest:
 
 .. code:: bash
 
@@ -163,8 +164,9 @@ Setup
 | deployments. Set the ``PRINTER_GUI_BIND_ADDRESS`` environment variable
 | to override the default bind address (``0.0.0.0:8000``) and
 | ``PRINTER_GUI_GUNICORN_WORKERS`` to control the number of worker
-| processes before using it, if desired. You can then launch the server
-| with:
+| processes before using it, if desired. The helper also refreshes the
+| static asset manifest automatically before Gunicorn starts. You can then
+| launch the server with:
 
 .. code:: bash
 
@@ -183,9 +185,9 @@ Setup
 | Assuming the server runs correctly, you may configure the
 | server to run automatically on startup as a systemd service.
 | On the Raspberry Pi, copy the 'printerserver.service' file
-| to '/etc/systemd/system/', review the ``User``, ``Group``, and
-| ``WorkingDirectory`` directives, and adjust them if your
-| environment differs from the defaults. The service reads
+| to '/etc/systemd/system/', review the ``User``, ``Group``,
+| ``WorkingDirectory``, and ``ExecStart`` directives, and adjust
+| them if your environment differs from the defaults. The service reads
 | optional overrides from ``/etc/default/printerserver``; you can
 | define ``PRINTER_GUI_BIND_ADDRESS`` there to change the bind
 | address, ``PRINTER_GUI_GUNICORN_WORKERS`` to tune the worker
@@ -198,13 +200,9 @@ Setup
     echo "PRINTER_GUI_GUNICORN_WORKERS=3" | sudo tee -a /etc/default/printerserver
     echo "PRINTER_GUI_ALLOWED_HOSTS=printer.example.com,printer.local" | sudo tee -a /etc/default/printerserver
 
-| Before starting or restarting the service, activate the virtualenv and run
-| ``collectstatic`` so WhiteNoise has the latest assets to serve:
-
-.. code:: bash
-
-    source /home/pi/printer-gui/venv/bin/activate
-    python /home/pi/printer-gui/manage.py collectstatic --no-input
+| The unit invokes ``start.bash`` so each restart refreshes the static assets
+| automatically before Gunicorn launches. If you customize the unit to call
+| Gunicorn directly, keep a ``collectstatic`` step in your workflow.
 
 | Start and enable it once it matches your setup.
 

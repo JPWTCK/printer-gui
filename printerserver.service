@@ -11,7 +11,7 @@ WorkingDirectory=/home/pi/printer-gui
 Environment=PRINTER_GUI_BIND_ADDRESS=0.0.0.0:8000
 Environment=PRINTER_GUI_GUNICORN_WORKERS=2
 EnvironmentFile=-/etc/default/printerserver
-ExecStart=/home/pi/printer-gui/venv/bin/gunicorn --bind ${PRINTER_GUI_BIND_ADDRESS} --workers ${PRINTER_GUI_GUNICORN_WORKERS} printer.wsgi:application
+ExecStart=/home/pi/printer-gui/start.bash
 Restart=on-failure
 RestartSec=5s
 
