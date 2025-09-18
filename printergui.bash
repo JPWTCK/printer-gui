@@ -20,6 +20,18 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     fi
 fi
 
+if [[ "${PRINTER_GUI_SKIP_REQUIREMENTS:-0}" != "1" && -f "requirements.txt" ]]; then
+    if "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
+        echo "Installing requirements in background." >&2
+        (
+            set +e
+            "$PYTHON_BIN" -m pip install --disable-pip-version-check -r requirements.txt
+        ) &
+    else
+        echo "pip is not available; skipping background requirements installation." >&2
+    fi
+fi
+
 "$PYTHON_BIN" manage.py collectstatic --no-input
 
 BIND_ADDRESS="${PRINTER_GUI_BIND_ADDRESS:-0.0.0.0:8000}"
