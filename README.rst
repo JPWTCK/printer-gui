@@ -13,7 +13,9 @@ Changes
 
 - Capturing ``stderr`` from subprocesses to convey errors to the user.
 - Leveraging Django's Messages Framework to display statuses and exceptions.
-- Removed dependency on ``libreoffice``; only CUPS-supported formats are accepted.
+- Added Docuvert-powered conversion so common Office formats are rendered to
+  PDF automatically while files CUPS handles natively continue to bypass
+  conversion.
 - Re-designed UI for better look/feel. -- Improved mobile/overall experience.
 - Added a favicon to better distinguish the browser tab.
 - Added per-session print queues so simultaneous users do not consume each other's jobs.
@@ -26,11 +28,13 @@ Requirements
 - Python 3.10+ (required by Django 5.2) and the ``pip`` package installer on the SBC's OS.
 - Ability to install CUPS so the ``lp`` command is available to the application.
 - A network printer connected on the local network
+- Docuvert 1.1.2 to convert Office documents and OpenDocument files to PDF before printing
 
 
 Limitations
 ###########
-- Only pdf, ps, txt, jpg, jpeg, png, gif, and tiff files are supported.
+- Formats beyond pdf, ps, txt, jpg, jpeg, png, gif, tif/tiff, doc/docx,
+  ppt/pptx, xls/xlsx, odt/odp/ods, and rtf remain unsupported.
 - It seems that some printers may not respect page orientation chosen.
 
 
@@ -53,8 +57,8 @@ Setup
 2) Install system packages
 --------------------------
 | Install the CUPS packages so the ``lp`` command is available to Django.
-| LibreOffice and Java are no longer required because the app only accepts
-| formats handled directly by CUPS. On Debian/Ubuntu:
+| LibreOffice remains unnecessary; Docuvert (installed via ``pip``) now
+| handles Office/OpenDocument conversions. On Debian/Ubuntu:
 
 .. code:: bash
 

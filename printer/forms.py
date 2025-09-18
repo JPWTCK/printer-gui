@@ -2,6 +2,7 @@ from django import forms
 from .models import *
 
 from .file_printer import get_available_printer_profiles
+from .upload_types import build_accept_attribute, describe_supported_extensions
 
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Layout, Fieldset, Row, Column
@@ -25,10 +26,10 @@ class FileUploadForm(forms.Form):
     file_upload = forms.FileField(
         label='Upload Document',
         required=True,
-        help_text='Only pdf, ps, txt, jpg, jpeg, png, gif, and tiff are supported',
+        help_text=f'Supported formats: {describe_supported_extensions()}',
         widget=forms.FileInput(attrs={
             'multiple': False,
-            'accept': 'application/pdf,application/postscript,text/plain,image/jpeg,image/png,image/gif,image/tiff'
+            'accept': build_accept_attribute()
         })
     )
 
