@@ -1,7 +1,12 @@
 import os
-import subprocess as sp
 import re
-from typing import List, Optional, Tuple
+import subprocess as sp
+from typing import Any, Dict, List, Optional, Tuple
+
+try:  # pragma: no cover - optional dependency
+    import cups
+except ImportError:  # pragma: no cover - optional dependency
+    cups = None  # type: ignore[assignment]
 
 from .paths import UPLOADS_DIR
 from .utils import DEFAULT_APP_SETTINGS, get_app_settings
@@ -24,6 +29,18 @@ _PRINTER_NOT_SELECTED = "No printer selected"
 
 _printer_profile = None
 _PRINTER_QUERY_TIMEOUT = 5
+
+_IPP_STATE_NAMES = {
+    3: "Idle",
+    4: "Processing",
+    5: "Stopped",
+}
+_KNOWN_STATE_LABELS = {value.lower(): value for value in _IPP_STATE_NAMES.values()}
+
+_IPPTOOL_TEST_FILES = (
+    "/usr/share/cups/ipptool/get-printer-attributes.test",
+    "/usr/local/share/cups/ipptool/get-printer-attributes.test",
+)
 
 
 def sanitize_printer_name(printer_name: Optional[str]) -> Optional[str]:
@@ -151,6 +168,357 @@ def _parse_lpstat_line(line: str, printer_name: str) -> Optional[str]:
         return None
 
     return primary[:1].upper() + primary[1:]
+
+
+def _normalize_string(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        stripped = value.strip()
+    else:
+        stripped = str(value).strip()
+
+    if not stripped:
+        return None
+
+    return stripped
+
+
+def _normalize_text(value: Any) -> Optional[str]:
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            normalized = _normalize_text(item)
+            if normalized is not None:
+                return normalized
+        return None
+
+    return _normalize_string(value)
+
+
+def _normalize_state(value: Any) -> Optional[str]:
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            normalized = _normalize_state(item)
+            if normalized is not None:
+                return normalized
+        return None
+
+    if isinstance(value, int):
+        return _IPP_STATE_NAMES.get(value, str(value))
+
+    normalized = _normalize_string(value)
+    if normalized is None:
+        return None
+
+    if normalized.isdigit():
+        try:
+            numeric = int(normalized)
+        except ValueError:
+            pass
+        else:
+            return _IPP_STATE_NAMES.get(numeric, str(numeric))
+
+    lowered = normalized.lower()
+    if lowered in _KNOWN_STATE_LABELS:
+        return _KNOWN_STATE_LABELS[lowered]
+
+    return normalized
+
+
+def _ensure_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+
+    if isinstance(value, (list, tuple)):
+        raw_values = list(value)
+    else:
+        raw_values = [value]
+
+    normalized: List[str] = []
+    for item in raw_values:
+        if isinstance(item, str):
+            candidate = item.strip()
+            if candidate.startswith("[") and candidate.endswith("]"):
+                candidate = candidate[1:-1]
+            parts = re.split(r",\s*|;\s*", candidate)
+        else:
+            parts = [item]
+
+        for part in parts:
+            normalized_part = _normalize_string(part)
+            if normalized_part is None:
+                continue
+            if (
+                len(normalized_part) >= 2
+                and normalized_part[0] == normalized_part[-1]
+                and normalized_part[0] in {'"', "'"}
+            ):
+                normalized_part = normalized_part[1:-1]
+            normalized.append(normalized_part)
+
+    return normalized
+
+
+def _parse_marker_level(value: str) -> Optional[int]:
+    normalized = _normalize_string(value)
+    if normalized is None:
+        return None
+
+    if re.fullmatch(r"-?\d+", normalized):
+        try:
+            return int(normalized)
+        except ValueError:
+            return None
+
+    return None
+
+
+def _parse_printer_supply(value: Any) -> List[Dict[str, Any]]:
+    supplies: List[Dict[str, Any]] = []
+    for raw_entry in _ensure_list(value):
+        entry: Dict[str, Any] = {}
+        for component in re.split(r";\s*", raw_entry):
+            if not component or "=" not in component:
+                continue
+            key, raw_val = component.split("=", 1)
+            normalized_val = _normalize_string(raw_val)
+            if normalized_val is None:
+                continue
+            if (
+                len(normalized_val) >= 2
+                and normalized_val[0] == normalized_val[-1]
+                and normalized_val[0] in {'"', "'"}
+            ):
+                normalized_val = normalized_val[1:-1]
+
+            normalized_key = key.strip().lower()
+            if normalized_key in {"marker-name", "supply-name"}:
+                entry["name"] = normalized_val
+            elif normalized_key in {"marker-color", "supply-color"}:
+                entry["color"] = normalized_val
+            elif normalized_key in {"marker-type", "supply-type"}:
+                entry["type"] = normalized_val
+            elif normalized_key in {"marker-level", "supply-level", "marker-levels"}:
+                level = _parse_marker_level(normalized_val)
+                entry["level"] = level if level is not None else normalized_val
+            elif normalized_key in {"marker-state", "supply-state"}:
+                entry["state"] = normalized_val
+
+        if entry:
+            supplies.append(entry)
+
+    return supplies
+
+
+def _parse_supply_entries(attributes: Dict[str, Any]) -> List[Dict[str, Any]]:
+    marker_names = _ensure_list(attributes.get("marker-names"))
+    if not marker_names:
+        marker_names = _ensure_list(attributes.get("marker-name"))
+
+    marker_levels = _ensure_list(attributes.get("marker-levels"))
+    if not marker_levels:
+        marker_levels = _ensure_list(attributes.get("marker-level"))
+
+    marker_colors = _ensure_list(attributes.get("marker-colors"))
+    if not marker_colors:
+        marker_colors = _ensure_list(attributes.get("marker-color"))
+
+    marker_states = _ensure_list(attributes.get("marker-state"))
+    marker_types = _ensure_list(attributes.get("marker-types"))
+    if not marker_types:
+        marker_types = _ensure_list(attributes.get("marker-type"))
+
+    total = max(
+        len(marker_names),
+        len(marker_levels),
+        len(marker_colors),
+        len(marker_states),
+        len(marker_types),
+    )
+
+    supplies: List[Dict[str, Any]] = []
+    for index in range(total):
+        entry: Dict[str, Any] = {}
+        if index < len(marker_names):
+            entry["name"] = marker_names[index]
+        if index < len(marker_colors):
+            entry["color"] = marker_colors[index]
+        if index < len(marker_types):
+            entry["type"] = marker_types[index]
+        if index < len(marker_levels):
+            parsed_level = _parse_marker_level(marker_levels[index])
+            entry["level"] = parsed_level if parsed_level is not None else marker_levels[index]
+        if index < len(marker_states):
+            entry["state"] = marker_states[index]
+        if entry:
+            supplies.append(entry)
+
+    if supplies:
+        return supplies
+
+    return _parse_printer_supply(attributes.get("printer-supply"))
+
+
+def _parse_ipptool_output(output: str) -> Dict[str, Any]:
+    attributes: Dict[str, Any] = {}
+    for raw_line in output.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        key: Optional[str]
+        value: Optional[str]
+        if ":" in stripped:
+            key, value = stripped.split(":", 1)
+        elif "=" in stripped:
+            key_part, value = stripped.split("=", 1)
+            key = key_part.strip().split(" ", 1)[0]
+        else:
+            continue
+
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        existing = attributes.get(key)
+        if existing is None:
+            attributes[key] = value
+        else:
+            if isinstance(existing, list):
+                existing.append(value)
+            else:
+                attributes[key] = [existing, value]
+
+    return attributes
+
+
+def _locate_ipptool_test_file() -> Optional[str]:
+    cups_datadir = os.environ.get("CUPS_DATADIR")
+    if cups_datadir:
+        candidate = os.path.join(cups_datadir, "ipptool", "get-printer-attributes.test")
+        if os.path.isfile(candidate):
+            return candidate
+
+    for candidate in _IPPTOOL_TEST_FILES:
+        if os.path.isfile(candidate):
+            return candidate
+
+    return None
+
+
+def _query_printer_attributes_via_pycups(
+    printer: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    cups_module = cups
+    if not cups_module:
+        return None, None
+
+    try:
+        connection = cups_module.Connection()
+    except Exception:
+        return None, _PRINTER_STATUS_UNAVAILABLE
+
+    try:
+        attributes = connection.getPrinterAttributes(printer)
+    except Exception:
+        return None, _PRINTER_STATUS_UNAVAILABLE
+
+    if isinstance(attributes, dict):
+        return attributes, None
+
+    return None, _PRINTER_STATUS_UNAVAILABLE
+
+
+def _query_printer_attributes_via_ipptool(
+    printer: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    test_file = _locate_ipptool_test_file()
+    if not test_file:
+        return None, _PRINTER_STATUS_UNAVAILABLE
+
+    uri = f"ipp://localhost/printers/{printer}"
+    try:
+        result = sp.run(
+            ["ipptool", "-T", str(_PRINTER_QUERY_TIMEOUT), "-c", uri, test_file],
+            check=False,
+            stdout=sp.PIPE,
+            stderr=sp.PIPE,
+            text=True,
+            timeout=_PRINTER_QUERY_TIMEOUT,
+        )
+    except sp.TimeoutExpired:
+        return None, _PRINTER_STATUS_TIMEOUT
+    except (OSError, ValueError):
+        return None, _PRINTER_STATUS_UNAVAILABLE
+
+    if result.returncode != 0:
+        error_text = _first_nonempty_line(result.stderr) or _first_nonempty_line(result.stdout)
+        return None, error_text or _PRINTER_STATUS_UNAVAILABLE
+
+    attributes = _parse_ipptool_output(result.stdout)
+    if attributes:
+        return attributes, None
+
+    return None, _PRINTER_STATUS_UNAVAILABLE
+
+
+def get_printer_diagnostics(printer_name: Optional[str] = None) -> Dict[str, Any]:
+    diagnostics: Dict[str, Any] = {
+        "printer": None,
+        "state": None,
+        "state_message": None,
+        "supplies": [],
+        "error": None,
+    }
+
+    if printer_name is None:
+        app_settings = get_app_settings()
+        if app_settings is not None:
+            app_settings.refresh_from_db()
+            printer_name = app_settings.printer_profile
+
+    sanitized = sanitize_printer_name(printer_name)
+    diagnostics["printer"] = sanitized
+
+    if sanitized is None:
+        diagnostics["error"] = _PRINTER_NOT_SELECTED
+        return diagnostics
+
+    attributes: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+    cups_attributes, cups_error = _query_printer_attributes_via_pycups(sanitized)
+    if cups_attributes is not None:
+        attributes = cups_attributes
+    if cups_error:
+        error_message = cups_error
+
+    if attributes is None:
+        ipptool_attributes, ipptool_error = _query_printer_attributes_via_ipptool(sanitized)
+        if ipptool_attributes is not None:
+            attributes = ipptool_attributes
+            error_message = None
+        elif ipptool_error:
+            error_message = ipptool_error
+
+    diagnostics["error"] = error_message
+
+    if not attributes:
+        return diagnostics
+
+    state = _normalize_state(attributes.get("printer-state"))
+    if state is None:
+        state = _normalize_state(attributes.get("printer-state-reasons"))
+    diagnostics["state"] = state
+    diagnostics["state_message"] = _normalize_text(attributes.get("printer-state-message"))
+    diagnostics["supplies"] = _parse_supply_entries(attributes)
+
+    if diagnostics["error"] and diagnostics["state"]:
+        diagnostics["error"] = None
+
+    return diagnostics
 
 
 def get_available_printer_profiles(current_selection: Optional[str] = None) -> List[Tuple[str, str]]:

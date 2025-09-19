@@ -11,5 +11,6 @@ urlpatterns = [
     path('submit_edit_file_form/', views.submit_edit_file_form, name='submit_edit_file_form'),
     path('delete_file/<int:file_id>/', views.delete_file, name='delete_file'),
     path('print_files/', views.print_files, name='print_files'),
+    path('status/', views.printer_status, name='printer_status'),
     path('settings', views.edit_settings, name='settings'),
 ]
