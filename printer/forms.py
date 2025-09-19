@@ -46,17 +46,13 @@ class SettingsForm(forms.ModelForm):
     app_title = forms.CharField(
         label = 'App title',
     )
-    default_color = forms.CharField(
+    default_color = forms.ChoiceField(
         label='Color default',
-        widget=forms.Select(
-            choices=PrintOptions.COLOR_OPTIONS
-        )
+        choices=PrintOptions.COLOR_OPTIONS,
     )
-    default_orientation = forms.CharField(
+    default_orientation = forms.ChoiceField(
         label='Orientation default',
-        widget=forms.Select(
-            choices=PrintOptions.ORIENTATION_OPTIONS
-        )
+        choices=PrintOptions.ORIENTATION_OPTIONS,
     )
     printer_profile = forms.ChoiceField(
         label='Printer Profile',
