@@ -32,7 +32,7 @@ class File(models.Model):
         self.file_type = self._FILE_TYPE_LABELS.get(suffix, 'Unknown format')
 
     def save(self, *args, **kwargs):
-        self.determine_file_type(self.name.lower())
+        self.determine_file_type(self.name)
 
         super(File, self).save(*args, **kwargs)
 
