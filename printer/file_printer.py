@@ -168,9 +168,24 @@ def print_pdf(filename, page_range, pages, color, orientation):
     command.extend(['-o', orientation_option, '-o', color_option, normalized_path])
 
     print_proc = sp.Popen(command, stdout=sp.PIPE, stderr=sp.PIPE)
-    output = print_proc.communicate()
+    stdout, stderr = print_proc.communicate()
 
-    return output
+    if print_proc.returncode != 0:
+        message_parts = []
+        for stream in (stderr, stdout):
+            if not stream:
+                continue
+            stripped = stream.strip()
+            if stripped:
+                message_parts.append(stripped)
+
+        message_parts.append(
+            f'Print command exited with status {print_proc.returncode}'.encode()
+        )
+        error_message = b"\n".join(message_parts)
+        return stdout, error_message
+
+    return stdout, stderr
 
 
 def _resolve_upload_file_path(filename: str) -> Optional[str]:
