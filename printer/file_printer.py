@@ -360,6 +360,19 @@ def _parse_supply_entries(attributes: Dict[str, Any]) -> List[Dict[str, Any]]:
     return _parse_printer_supply(attributes.get("printer-supply"))
 
 
+def _clean_ipptool_value(value: str) -> str:
+    cleaned = value.strip()
+    if cleaned.endswith(","):
+        cleaned = cleaned[:-1].rstrip()
+    if (
+        len(cleaned) >= 2
+        and cleaned[0] == cleaned[-1]
+        and cleaned[0] in {'"', "'"}
+    ):
+        cleaned = cleaned[1:-1]
+    return cleaned
+
+
 def _parse_ipptool_output(output: str) -> Dict[str, Any]:
     attributes: Dict[str, Any] = {}
     for raw_line in output.splitlines():
@@ -368,7 +381,7 @@ def _parse_ipptool_output(output: str) -> Dict[str, Any]:
             continue
 
         key: Optional[str]
-        value: Optional[str]
+        value: str
         if ":" in stripped:
             key, value = stripped.split(":", 1)
         elif "=" in stripped:
@@ -378,7 +391,7 @@ def _parse_ipptool_output(output: str) -> Dict[str, Any]:
             continue
 
         key = key.strip()
-        value = value.strip()
+        value = _clean_ipptool_value(value)
         if not key:
             continue
 
@@ -441,7 +454,7 @@ def _query_printer_attributes_via_ipptool(
     uri = f"ipp://localhost/printers/{printer}"
     try:
         result = sp.run(
-            ["ipptool", "-T", str(_PRINTER_QUERY_TIMEOUT), "-c", uri, test_file],
+            ["ipptool", "-T", str(_PRINTER_QUERY_TIMEOUT), uri, test_file],
             check=False,
             stdout=sp.PIPE,
             stderr=sp.PIPE,
