@@ -360,6 +360,13 @@ def _parse_supply_entries(attributes: Dict[str, Any]) -> List[Dict[str, Any]]:
     return _parse_printer_supply(attributes.get("printer-supply"))
 
 
+def _clean_ipptool_key(key: str) -> str:
+    normalized = re.sub(r"[ \t\r\f\v]+", " ", key.strip())
+    if "(" in normalized:
+        normalized = normalized.split("(", 1)[0].rstrip()
+    return normalized
+
+
 def _clean_ipptool_value(value: str) -> str:
     cleaned = value.strip()
     if cleaned.endswith(","):
@@ -380,17 +387,16 @@ def _parse_ipptool_output(output: str) -> Dict[str, Any]:
         if not stripped or stripped.startswith("#"):
             continue
 
-        key: Optional[str]
+        key: str
         value: str
         if ":" in stripped:
-            key, value = stripped.split(":", 1)
+            raw_key, value = stripped.split(":", 1)
         elif "=" in stripped:
-            key_part, value = stripped.split("=", 1)
-            key = key_part.strip().split(" ", 1)[0]
+            raw_key, value = stripped.split("=", 1)
         else:
             continue
 
-        key = key.strip()
+        key = _clean_ipptool_key(raw_key)
         value = _clean_ipptool_value(value)
         if not key:
             continue

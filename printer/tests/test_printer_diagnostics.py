@@ -83,8 +83,20 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
 
     def test_collects_state_and_marker_supplies_from_ipptool_output(self) -> None:
         dummy_settings = _DummySettings(printer_profile="Office_Printer")
-        ipptool_stdout = "\n".join(
-            [
+        expected_command = [
+            "ipptool",
+            "-T",
+            str(file_printer._PRINTER_QUERY_TIMEOUT),
+            "ipp://localhost/printers/Office_Printer",
+            "/tmp/ipptool",
+        ]
+        expected_supplies = [
+            {"name": "Black Cartridge", "level": 100, "color": "black"},
+            {"name": "Cyan Cartridge", "level": 50, "color": "cyan"},
+        ]
+
+        ipptool_variants = {
+            "spaces": [
                 '"ipp://localhost/printers/Office_Printer" - get-printer-attributes',
                 "{",
                 "    attributes-charset (charset) = utf-8",
@@ -97,41 +109,48 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
                 "    marker-colors (nameWithoutLanguage) = \"black\"",
                 "    marker-colors (nameWithoutLanguage) = \"cyan\"",
                 "}",
-            ]
-        )
-
-        completed = sp.CompletedProcess(
-            args=["ipptool"],
-            returncode=0,
-            stdout=ipptool_stdout,
-            stderr="",
-        )
-
-        with patch("printer.file_printer.get_app_settings", return_value=dummy_settings), patch(
-            "printer.file_printer.cups", None
-        ), patch("printer.file_printer._locate_ipptool_test_file", return_value="/tmp/ipptool"), patch(
-            "printer.file_printer.sp.run"
-        ) as mock_run:
-            mock_run.return_value = completed
-            diagnostics = file_printer.get_printer_diagnostics()
-
-            expected_command = [
-                "ipptool",
-                "-T",
-                str(file_printer._PRINTER_QUERY_TIMEOUT),
-                "ipp://localhost/printers/Office_Printer",
-                "/tmp/ipptool",
-            ]
-            mock_run.assert_called_once()
-            self.assertEqual(mock_run.call_args[0][0], expected_command)
-
-        self.assertEqual(diagnostics["state"], "Processing")
-        self.assertEqual(diagnostics["state_message"], "Printing job 123")
-        self.assertEqual(
-            diagnostics["supplies"],
-            [
-                {"name": "Black Cartridge", "level": 100, "color": "black"},
-                {"name": "Cyan Cartridge", "level": 50, "color": "cyan"},
             ],
-        )
-        self.assertIsNone(diagnostics["error"])
+            "tabs": [
+                '"ipp://localhost/printers/Office_Printer" - get-printer-attributes',
+                "{",
+                "\tattributes-charset\t(charset) = utf-8",
+                "\tprinter-state\t(enum) = processing",
+                "\tprinter-state-message\t(textWithoutLanguage) = \"Printing job 123\"",
+                "\tmarker-names\t(nameWithoutLanguage) = \"Black Cartridge\"",
+                "\tmarker-names\t(nameWithoutLanguage) = \"Cyan Cartridge\"",
+                "\tmarker-levels\t(integer) = 100",
+                "\tmarker-levels\t(integer) = 50",
+                "\tmarker-colors\t(nameWithoutLanguage) = \"black\"",
+                "\tmarker-colors\t(nameWithoutLanguage) = \"cyan\"",
+                "}",
+            ],
+        }
+
+        for variant, lines in ipptool_variants.items():
+            with self.subTest(ipptool_output=variant):
+                ipptool_stdout = "\n".join(lines)
+                completed = sp.CompletedProcess(
+                    args=["ipptool"],
+                    returncode=0,
+                    stdout=ipptool_stdout,
+                    stderr="",
+                )
+
+                with patch("printer.file_printer.get_app_settings", return_value=dummy_settings), patch(
+                    "printer.file_printer.cups", None
+                ), patch(
+                    "printer.file_printer._locate_ipptool_test_file", return_value="/tmp/ipptool"
+                ), patch("printer.file_printer.sp.run") as mock_run:
+                    mock_run.return_value = completed
+                    diagnostics = file_printer.get_printer_diagnostics()
+
+                    mock_run.assert_called_once()
+                    self.assertEqual(mock_run.call_args[0][0], expected_command)
+
+                self.assertEqual(diagnostics["state"], "Processing")
+                self.assertEqual(diagnostics["state_message"], "Printing job 123")
+                self.assertEqual(diagnostics["supplies"], expected_supplies)
+                self.assertNotEqual(
+                    diagnostics["error"], file_printer._PRINTER_STATUS_UNAVAILABLE
+                )
+                self.assertIsNone(diagnostics["error"])
