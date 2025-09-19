@@ -1,8 +1,7 @@
 from django.contrib import messages
-from django.http import Http404, HttpResponse, HttpResponseRedirect
-from django.shortcuts import get_object_or_404, render
-from django.urls import reverse
 from django.core.files.storage import FileSystemStorage
+from django.http import Http404, HttpResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 
@@ -72,27 +71,26 @@ def index(request):
 
 def upload_file(request):
     session_key = _ensure_session_key(request)
-    printer_selected = True
     app_settings = get_app_settings()
+    if app_settings is not None:
+        app_settings.refresh_from_db()
+
+    printer_selected = (
+        app_settings is not None
+        and app_settings.printer_profile != DEFAULT_APP_SETTINGS['printer_profile']
+    )
     form = FileUploadForm()
 
-    if request.method != 'POST':
-        if app_settings is not None:
-            app_settings.refresh_from_db()
-            if app_settings.printer_profile == DEFAULT_APP_SETTINGS['printer_profile']:
-                printer_selected = False
-        else:
-            printer_selected = False
-    else:
+    if request.method == 'POST':
         upload = request.FILES.get('file_upload')
         if upload is None:
             messages.error(request, 'No file was selected for upload.')
-            return HttpResponseRedirect(reverse('index'))
+            return redirect('index')
 
         ext = Path(upload.name).suffix.lower()
         if not ext or ext not in SUPPORTED_UPLOAD_EXTENSIONS:
             messages.error(request, 'File type not supported')
-            return HttpResponseRedirect(reverse('index'))
+            return redirect('index')
 
         requires_conversion = ext not in CUPS_NATIVE_EXTENSIONS
         upload.name = _sanitize_upload_name(upload.name)
@@ -102,7 +100,6 @@ def upload_file(request):
         default_orientation = DEFAULT_APP_SETTINGS['default_orientation']
 
         if app_settings is not None:
-            app_settings.refresh_from_db()
             default_color = app_settings.default_color or default_color
             default_orientation = app_settings.default_orientation or default_orientation
 
@@ -113,41 +110,33 @@ def upload_file(request):
             saved_name = storage.save(upload.name, upload)
         except Exception:
             messages.error(request, 'An unexpected error occurred while saving the file. Please try again.')
-            return HttpResponseRedirect(reverse('index'))
+            return redirect('index')
 
         final_name = saved_name
         if requires_conversion:
             pdf_candidate = Path(saved_name).with_suffix('.pdf').name
             pdf_name = storage.get_available_name(pdf_candidate)
             pdf_path = Path(storage.path(pdf_name))
+
+            def _handle_conversion_failure(message: str):
+                storage.delete(saved_name)
+                try:
+                    pdf_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                messages.error(request, message)
+                return redirect('index')
+
             try:
                 convert_document_to_pdf(Path(storage.path(saved_name)), pdf_path)
             except ConversionError as exc:
-                storage.delete(saved_name)
-                try:
-                    pdf_path.unlink()
-                except FileNotFoundError:
-                    pass
-                except OSError:
-                    pass
-                messages.error(
-                    request,
-                    f'Unable to convert {saved_name} to PDF: {exc}',
+                return _handle_conversion_failure(
+                    f'Unable to convert {saved_name} to PDF: {exc}'
                 )
-                return HttpResponseRedirect(reverse('index'))
             except Exception:
-                storage.delete(saved_name)
-                try:
-                    pdf_path.unlink()
-                except FileNotFoundError:
-                    pass
-                except OSError:
-                    pass
-                messages.error(
-                    request,
-                    'An unexpected error occurred while converting the file. Please try again.',
+                return _handle_conversion_failure(
+                    'An unexpected error occurred while converting the file. Please try again.'
                 )
-                return HttpResponseRedirect(reverse('index'))
 
             storage.delete(saved_name)
             final_name = pdf_name
@@ -164,7 +153,7 @@ def upload_file(request):
             messages.success(request, f'Converted and queued {final_name} for printing.')
         else:
             messages.success(request, f'Queued {final_name} for printing.')
-        return HttpResponseRedirect(reverse('index'))
+        return redirect('index')
 
     context = {'printer_selected': printer_selected, 'form': form}
     return render(request, 'upload_file.html', context)
@@ -222,7 +211,7 @@ def delete_file(request, file_id):
     file_obj.delete()
     messages.success(request, f'Removed {file_name} from the queue.')
 
-    return HttpResponseRedirect(reverse('index'))
+    return redirect('index')
 
 
 @require_POST
@@ -293,7 +282,7 @@ def edit_settings(request):
         if form.is_valid():
             form.save()
             file_printer.refresh_printer_profile()
-            return HttpResponseRedirect(reverse('index'))
+            return redirect('index')
 
         messages.error(request, 'Please correct the errors below.')
 

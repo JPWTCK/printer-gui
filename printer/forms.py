@@ -1,24 +1,33 @@
 from django import forms
-from .models import *
-
-from .file_printer import get_available_printer_profiles
-from .upload_types import build_accept_attribute, describe_supported_extensions
 
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Layout, Fieldset, Row, Column
+
+from .file_printer import get_available_printer_profiles
+from .models import Settings
+from .upload_types import build_accept_attribute, describe_supported_extensions
+
+
+def _build_horizontal_helper() -> FormHelper:
+    helper = FormHelper()
+    helper.form_class = 'form-horizontal'
+    helper.label_class = 'col-25 fs-400 ff-sans-normal'
+    helper.field_class = 'col-75'
+    helper.form_tag = False
+    return helper
+
 
 class PrintOptions:
     RANGE_OPTIONS = (
         ('0', 'All pages'),
-        ('1', 'Custom range') 
+        ('1', 'Custom range'),
     )
     COLOR_OPTIONS = (
         ('Gray', 'Grayscale'),
-        ('RGB', 'Color')
+        ('RGB', 'Color'),
     )
     ORIENTATION_OPTIONS = (
         ('3', 'Portrait'),
-        ('4', 'Landscape')
+        ('4', 'Landscape'),
     )
 
 
@@ -29,22 +38,18 @@ class FileUploadForm(forms.Form):
         help_text=f'Supported formats: {describe_supported_extensions()}',
         widget=forms.FileInput(attrs={
             'multiple': False,
-            'accept': build_accept_attribute()
-        })
+            'accept': build_accept_attribute(),
+        }),
     )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.helper = FormHelper()
-        self.helper.form_class='form-horizontal'
-        self.helper.label_class='col-25 fs-400 ff-sans-normal'
-        self.helper.field_class='col-75'
-        self.helper.form_tag = False
+        self.helper = _build_horizontal_helper()
     
 
 class SettingsForm(forms.ModelForm):
     app_title = forms.CharField(
-        label = 'App title',
+        label='App title',
     )
     default_color = forms.ChoiceField(
         label='Color default',
@@ -61,16 +66,22 @@ class SettingsForm(forms.ModelForm):
 
     class Meta:
         model = Settings
-        fields = [ 'app_title', 'default_color', 'default_orientation',
-                    'printer_profile' ]
+        fields = [
+            'app_title',
+            'default_color',
+            'default_orientation',
+            'printer_profile',
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        current_selection = self.initial.get('printer_profile') or getattr(self.instance, 'printer_profile', None)
-        self.fields['printer_profile'].choices = get_available_printer_profiles(current_selection)
-        self.helper = FormHelper()
-        self.helper.form_class='form-horizontal'
-        self.helper.label_class='col-25 fs-400 ff-sans-normal'
-        self.helper.field_class='col-75'
-        self.helper.form_tag = False
+        current_selection = self.initial.get('printer_profile') or getattr(
+            self.instance,
+            'printer_profile',
+            None,
+        )
+        self.fields['printer_profile'].choices = get_available_printer_profiles(
+            current_selection
+        )
+        self.helper = _build_horizontal_helper()
 
