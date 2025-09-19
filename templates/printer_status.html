@@ -1,0 +1,89 @@
+{% extends './base.html' %}
+
+{% block title %}Printer Diagnostics{% endblock title %}
+
+{% block content %}
+<div class="p-3">
+    <div class="container-md flow">
+        <div class="bg-gradient-right-crimson-blue br-2 mb-2 p-2">
+            <div class="bg-white br-2 lightly-pad-container shadow">
+                <h2 class="text-center">Printer Diagnostics</h2>
+            </div>
+            <div class="bg-white br-2 p-3 me-1 ms-1">
+                {% if diagnostics.printer %}
+                <p class="fs-5">Details for <strong>{{ diagnostics.printer }}</strong>.</p>
+                {% else %}
+                <div class="alert alert-warning" role="alert">
+                    No printer has been configured.
+                </div>
+                {% endif %}
+
+                {% if diagnostics.error %}
+                <div class="alert alert-warning" role="alert">
+                    {{ diagnostics.error }}
+                </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <h3 class="fs-4">Current status</h3>
+                    <dl class="row">
+                        <dt class="col-sm-4">State</dt>
+                        <dd class="col-sm-8">{{ diagnostics.state|default:"Not available" }}</dd>
+                        <dt class="col-sm-4">Message</dt>
+                        <dd class="col-sm-8">{{ diagnostics.state_message|default:"Not available" }}</dd>
+                    </dl>
+                </div>
+
+                <div class="mb-3">
+                    <h3 class="fs-4">Supplies</h3>
+                    {% if diagnostics.supplies %}
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Level</th>
+                                    <th scope="col">Color</th>
+                                    <th scope="col">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for supply in diagnostics.supplies %}
+                                <tr>
+                                    <td>{{ supply.name|default:"—" }}</td>
+                                    <td>
+                                        {% if supply.level is not None %}
+                                            {{ supply.level }}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ supply.color|default:"—" }}</td>
+                                    <td>{{ supply.state|default:"—" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% elif not diagnostics.error %}
+                    <p class="text-muted mb-0">The printer did not report any supply information.</p>
+                    {% else %}
+                    <p class="text-muted mb-0">Supply levels are unavailable.</p>
+                    {% endif %}
+                </div>
+
+                <div class="d-flex justify-content-between flex-wrap gap-2">
+                    <a href="{% url 'index' %}" class="text-decoration-none">
+                        <button class="bttn-brand-blue">Back to home</button>
+                    </a>
+                    <a href="{% url 'printer_status' %}" class="text-decoration-none">
+                        <button class="bttn-white px-3 py-2">
+                            <i class="bi bi-arrow-clockwise"></i>&ensp;Refresh diagnostics
+                        </button>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

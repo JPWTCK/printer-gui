@@ -70,6 +70,13 @@ def index(request):
     return render(request, 'index.html', context)
 
 
+@never_cache
+def printer_status(request):
+    diagnostics = file_printer.get_printer_diagnostics()
+    context = {'diagnostics': diagnostics}
+    return render(request, 'printer_status.html', context)
+
+
 def upload_file(request):
     session_key = _ensure_session_key(request)
     app_settings = get_app_settings()
