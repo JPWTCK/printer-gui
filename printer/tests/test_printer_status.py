@@ -69,3 +69,41 @@ class IndexViewPrinterStatusTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["printer_status"], "Printer status unavailable")
+
+
+class PrinterDiagnosticsTests(SimpleTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.dummy_settings = _DummySettings(printer_profile="Office_Printer")
+
+    def test_diagnostics_use_lpstat_state_when_attributes_missing(self) -> None:
+        with patch("printer.file_printer.get_app_settings", return_value=self.dummy_settings), patch(
+            "printer.file_printer._query_printer_attributes_via_pycups",
+            return_value=(None, file_printer._PRINTER_STATUS_UNAVAILABLE),
+        ), patch(
+            "printer.file_printer._query_printer_attributes_via_ipptool",
+            return_value=(None, file_printer._PRINTER_STATUS_UNAVAILABLE),
+        ), patch(
+            "printer.file_printer._query_printer_state_via_lpstat",
+            return_value=("Idle", None),
+        ):
+            diagnostics = file_printer.get_printer_diagnostics()
+
+        self.assertEqual(diagnostics["state"], "Idle")
+        self.assertIsNone(diagnostics["error"])
+
+    def test_diagnostics_report_lpstat_error_when_no_state_available(self) -> None:
+        with patch("printer.file_printer.get_app_settings", return_value=self.dummy_settings), patch(
+            "printer.file_printer._query_printer_attributes_via_pycups",
+            return_value=(None, None),
+        ), patch(
+            "printer.file_printer._query_printer_attributes_via_ipptool",
+            return_value=(None, None),
+        ), patch(
+            "printer.file_printer._query_printer_state_via_lpstat",
+            return_value=(None, file_printer._PRINTER_STATUS_TIMEOUT),
+        ):
+            diagnostics = file_printer.get_printer_diagnostics()
+
+        self.assertIsNone(diagnostics["state"])
+        self.assertEqual(diagnostics["error"], file_printer._PRINTER_STATUS_TIMEOUT)

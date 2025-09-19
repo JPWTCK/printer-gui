@@ -100,9 +100,19 @@ def get_printer_status(printer_name: Optional[str] = None) -> str:
     if sanitized is None:
         return _PRINTER_NOT_SELECTED
 
+    status, error_message = _query_printer_state_via_lpstat(sanitized)
+    if status is not None:
+        return status
+    if error_message is not None:
+        return error_message
+
+    return _PRINTER_STATUS_UNAVAILABLE
+
+
+def _query_printer_state_via_lpstat(printer: str) -> Tuple[Optional[str], Optional[str]]:
     try:
         result = sp.run(
-            ["lpstat", "-p", sanitized],
+            ["lpstat", "-p", printer],
             check=False,
             stdout=sp.PIPE,
             stderr=sp.PIPE,
@@ -110,15 +120,20 @@ def get_printer_status(printer_name: Optional[str] = None) -> str:
             timeout=_PRINTER_QUERY_TIMEOUT,
         )
     except sp.TimeoutExpired:
-        return _PRINTER_STATUS_TIMEOUT
+        return None, _PRINTER_STATUS_TIMEOUT
     except (OSError, ValueError):
-        return _PRINTER_STATUS_UNAVAILABLE
+        return None, _PRINTER_STATUS_UNAVAILABLE
 
-    status = _parse_lpstat_result(result, sanitized)
-    if status:
-        return status
+    parsed = _parse_lpstat_result(result, printer)
+    if parsed:
+        if result.returncode == 0:
+            return parsed, None
+        return None, parsed
 
-    return _PRINTER_STATUS_UNAVAILABLE
+    returncode = getattr(result, "returncode", None)
+    if returncode == 0:
+        return None, None
+    return None, _PRINTER_STATUS_UNAVAILABLE
 
 
 def _parse_lpstat_result(result: sp.CompletedProcess[str], printer_name: str) -> Optional[str]:
@@ -525,6 +540,12 @@ def get_printer_diagnostics(printer_name: Optional[str] = None) -> Dict[str, Any
     diagnostics["error"] = error_message
 
     if not attributes:
+        status, status_error = _query_printer_state_via_lpstat(sanitized)
+        if status is not None:
+            diagnostics["state"] = status
+            diagnostics["error"] = None
+        elif status_error is not None and diagnostics["error"] in {None, _PRINTER_STATUS_UNAVAILABLE}:
+            diagnostics["error"] = status_error
         return diagnostics
 
     state = _normalize_state(attributes.get("printer-state"))
@@ -536,6 +557,14 @@ def get_printer_diagnostics(printer_name: Optional[str] = None) -> Dict[str, Any
 
     if diagnostics["error"] and diagnostics["state"]:
         diagnostics["error"] = None
+
+    if diagnostics["state"] is None:
+        status, status_error = _query_printer_state_via_lpstat(sanitized)
+        if status is not None:
+            diagnostics["state"] = status
+            diagnostics["error"] = None
+        elif status_error is not None and diagnostics["error"] in {None, _PRINTER_STATUS_UNAVAILABLE}:
+            diagnostics["error"] = status_error
 
     return diagnostics
 
