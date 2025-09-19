@@ -65,7 +65,8 @@ def index(request):
     _claim_legacy_files(session_key)
 
     files = File.objects.filter(session_key=session_key).order_by('-uploaded_at')
-    context = {'files': files}
+    printer_status = file_printer.get_printer_status()
+    context = {'files': files, 'printer_status': printer_status}
     return render(request, 'index.html', context)
 
 

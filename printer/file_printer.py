@@ -17,6 +17,10 @@ _PRINTER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 _PAGE_SELECTION_PATTERN = re.compile(r"^[0-9]+(?:[-,][0-9]+)*$")
 _SAFE_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
+_PRINTER_STATUS_UNAVAILABLE = "Printer status unavailable"
+_PRINTER_STATUS_TIMEOUT = "Printer status check timed out"
+_PRINTER_NOT_SELECTED = "No printer selected"
+
 
 _printer_profile = None
 _PRINTER_QUERY_TIMEOUT = 5
@@ -64,6 +68,89 @@ def _collect_available_printers() -> List[str]:
             printers.append(sanitized)
 
     return printers
+
+
+def get_printer_status(printer_name: Optional[str] = None) -> str:
+    """Return a concise status string for the configured printer."""
+
+    if printer_name is None:
+        app_settings = get_app_settings()
+        if app_settings is not None:
+            app_settings.refresh_from_db()
+            printer_name = app_settings.printer_profile
+
+    sanitized = sanitize_printer_name(printer_name)
+    if sanitized is None:
+        return _PRINTER_NOT_SELECTED
+
+    try:
+        result = sp.run(
+            ["lpstat", "-p", sanitized],
+            check=False,
+            stdout=sp.PIPE,
+            stderr=sp.PIPE,
+            text=True,
+            timeout=_PRINTER_QUERY_TIMEOUT,
+        )
+    except sp.TimeoutExpired:
+        return _PRINTER_STATUS_TIMEOUT
+    except (OSError, ValueError):
+        return _PRINTER_STATUS_UNAVAILABLE
+
+    status = _parse_lpstat_result(result, sanitized)
+    if status:
+        return status
+
+    return _PRINTER_STATUS_UNAVAILABLE
+
+
+def _parse_lpstat_result(result: sp.CompletedProcess[str], printer_name: str) -> Optional[str]:
+    line = _first_nonempty_line(result.stdout)
+    if line:
+        parsed = _parse_lpstat_line(line, printer_name)
+        if parsed:
+            return parsed
+
+    error_line = _first_nonempty_line(result.stderr)
+    if error_line:
+        return error_line
+
+    if line:
+        return line
+
+    return None
+
+
+def _first_nonempty_line(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if stripped:
+            return re.sub(r"\s+", " ", stripped)
+
+    return None
+
+
+def _parse_lpstat_line(line: str, printer_name: str) -> Optional[str]:
+    normalized = re.sub(r"\s+", " ", line).strip()
+    prefix = f"printer {printer_name}"
+    if normalized.lower().startswith(prefix.lower()):
+        normalized = normalized[len(prefix) :].lstrip()
+
+    if not normalized:
+        return None
+
+    primary = normalized.split(". ", 1)[0].rstrip(".")
+    if primary.lower().startswith("is "):
+        primary = primary[3:].strip()
+
+    primary = primary.strip()
+    if not primary:
+        return None
+
+    return primary[:1].upper() + primary[1:]
 
 
 def get_available_printer_profiles(current_selection: Optional[str] = None) -> List[Tuple[str, str]]:
