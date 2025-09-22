@@ -1,4 +1,5 @@
 import os
+import plistlib
 import re
 import subprocess as sp
 import xml.etree.ElementTree as ET
@@ -542,7 +543,271 @@ def _parse_ipptool_xml_output(output: str) -> Dict[str, Any]:
 
 
 def _parse_ipptool_output(output: str) -> Dict[str, Any]:
-    return _parse_ipptool_xml_output(output)
+    attributes = _parse_ipptool_xml_output(output)
+    if attributes:
+        return attributes
+
+    return _parse_ipptool_plist_output(output)
+
+
+def _plist_bool_to_string(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _parse_plist_scalar(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+
+    if isinstance(value, bool):
+        return _plist_bool_to_string(value)
+
+    return _normalize_string(value)
+
+
+def _plist_to_list(value: Any) -> List[Any]:
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return value
+
+    return [value]
+
+
+def _parse_plist_collection(value: Any) -> Optional[Dict[str, Any]]:
+    items: List[Any]
+    if isinstance(value, dict):
+        lower_keys = {str(key).lower(): key for key in value.keys()}
+        for candidate in ("members", "member", "values"):
+            key = lower_keys.get(candidate)
+            if key is not None:
+                items = _plist_to_list(value[key])
+                break
+        else:
+            items = [
+                {"name": key, "value": val}
+                for key, val in value.items()
+                if isinstance(key, str)
+            ]
+    else:
+        items = _plist_to_list(value)
+
+    collection: Dict[str, Any] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        lower_keys = {str(key).lower(): key for key in item.keys()}
+        name_key = lower_keys.get("name")
+        if name_key is None:
+            continue
+        member_name = _normalize_string(item[name_key])
+        if not member_name:
+            continue
+
+        value_key = None
+        for candidate in ("values", "value"):
+            candidate_key = lower_keys.get(candidate)
+            if candidate_key is not None:
+                value_key = candidate_key
+                break
+        if value_key is None:
+            continue
+
+        member_values = _parse_plist_attribute_values(item[value_key])
+        if not member_values:
+            continue
+
+        if len(member_values) == 1:
+            member_value: Any = member_values[0]
+        else:
+            member_value = member_values
+
+        existing = collection.get(member_name)
+        if existing is None:
+            collection[member_name] = member_value
+        else:
+            if isinstance(existing, list):
+                if isinstance(member_value, list):
+                    existing.extend(member_value)
+                else:
+                    existing.append(member_value)
+            else:
+                if isinstance(member_value, list):
+                    collection[member_name] = [existing, *member_value]
+                else:
+                    collection[member_name] = [existing, member_value]
+
+    return collection if collection else None
+
+
+def _parse_plist_attribute_value(value: Any) -> Optional[Any]:
+    if value is None:
+        return None
+
+    if isinstance(value, bool):
+        return _plist_bool_to_string(value)
+
+    if isinstance(value, (str, int, float)):
+        return _normalize_string(value)
+
+    if isinstance(value, bytes):
+        return value
+
+    if isinstance(value, list):
+        values: List[Any] = []
+        for item in value:
+            parsed = _parse_plist_attribute_value(item)
+            if parsed is None:
+                continue
+            if isinstance(parsed, list):
+                values.extend(parsed)
+            else:
+                values.append(parsed)
+        return values
+
+    if isinstance(value, dict):
+        lower_keys = {str(key).lower(): key for key in value.keys()}
+
+        for scalar_key in ("text", "string", "integer", "real", "date"):
+            key = lower_keys.get(scalar_key)
+            if key is not None:
+                return _parse_plist_scalar(value[key])
+
+        if "boolean" in lower_keys:
+            key = lower_keys["boolean"]
+            boolean_value = value[key]
+            if isinstance(boolean_value, bool):
+                return _plist_bool_to_string(boolean_value)
+            return _normalize_string(boolean_value)
+
+        value_tag_key = lower_keys.get("value-tag")
+        value_tag = _normalize_string(value[value_tag_key]) if value_tag_key else None
+        if value_tag:
+            value_tag = value_tag.lower()
+
+        if value_tag == "collection":
+            value_key = lower_keys.get("value") or lower_keys.get("values")
+            if value_key is None:
+                return None
+            return _parse_plist_collection(value[value_key])
+
+        if "values" in lower_keys:
+            return _parse_plist_attribute_values(value[lower_keys["values"]])
+
+        if "value" in lower_keys:
+            return _parse_plist_attribute_value(value[lower_keys["value"]])
+
+        if "data" in lower_keys:
+            return value[lower_keys["data"]]
+
+        if "name" in lower_keys:
+            name = _normalize_string(value[lower_keys["name"]])
+            if not name:
+                return None
+            nested_key = lower_keys.get("values") or lower_keys.get("value")
+            if nested_key is None:
+                return None
+            nested_values = _parse_plist_attribute_values(value[nested_key])
+            if not nested_values:
+                return None
+            if len(nested_values) == 1:
+                return {name: nested_values[0]}
+            return {name: nested_values}
+
+    return None
+
+
+def _parse_plist_attribute_values(value: Any) -> List[Any]:
+    values: List[Any] = []
+    for item in _plist_to_list(value):
+        parsed = _parse_plist_attribute_value(item)
+        if parsed is None:
+            continue
+        if isinstance(parsed, list):
+            values.extend(parsed)
+        else:
+            values.append(parsed)
+    return values
+
+
+def _collect_plist_attributes(node: Any, attributes: Dict[str, Any]) -> None:
+    if isinstance(node, dict):
+        lower_keys = {str(key).lower(): key for key in node.keys()}
+
+        name_key = lower_keys.get("name")
+        value_key = None
+        for candidate in ("values", "value"):
+            candidate_key = lower_keys.get(candidate)
+            if candidate_key is not None:
+                value_key = candidate_key
+                break
+
+        if name_key is not None and value_key is not None:
+            name = _normalize_string(node[name_key])
+            if name:
+                parsed_values = _parse_plist_attribute_values(node[value_key])
+                if parsed_values:
+                    _merge_ipptool_attribute_values(attributes, name, parsed_values)
+
+            for key, value in node.items():
+                if key in {name_key, value_key}:
+                    continue
+                if isinstance(value, (str, bytes, int, float, bool)):
+                    continue
+                _collect_plist_attributes(value, attributes)
+            return
+
+        for key, value in node.items():
+            lower_key = str(key).lower()
+            if lower_key.endswith("attributes") and lower_key != "attributes-count":
+                if isinstance(value, dict):
+                    for attribute_name, attribute_value in value.items():
+                        normalized_name = _normalize_string(attribute_name)
+                        if not normalized_name:
+                            continue
+                        parsed_values = _parse_plist_attribute_values(attribute_value)
+                        if parsed_values:
+                            _merge_ipptool_attribute_values(
+                                attributes, normalized_name, parsed_values
+                            )
+                else:
+                    _collect_plist_attributes(value, attributes)
+            elif lower_key not in {"tag", "group-tag", "value-tag"}:
+                _collect_plist_attributes(value, attributes)
+
+    elif isinstance(node, list):
+        for item in node:
+            _collect_plist_attributes(item, attributes)
+
+
+def _parse_ipptool_plist_output(output: str) -> Dict[str, Any]:
+    stripped_output = output.strip()
+    if not stripped_output or "<plist" not in stripped_output:
+        return {}
+
+    if "ResponseAttributes" not in stripped_output:
+        return {}
+
+    xml_start = stripped_output.find("<?xml")
+    plist_start = stripped_output.find("<plist")
+    start_index = xml_start if xml_start != -1 else plist_start
+    if start_index == -1:
+        return {}
+
+    plist_text = stripped_output[start_index:]
+    end_index = plist_text.rfind("</plist>")
+    if end_index != -1:
+        plist_text = plist_text[: end_index + len("</plist>")]
+
+    try:
+        parsed_plist = plistlib.loads(plist_text.encode("utf-8"))
+    except (plistlib.InvalidFileException, ValueError, AttributeError):
+        return {}
+
+    attributes: Dict[str, Any] = {}
+    _collect_plist_attributes(parsed_plist, attributes)
+    return attributes
 
 
 def _locate_ipptool_test_file() -> Optional[str]:
@@ -604,13 +869,15 @@ def _query_printer_attributes_via_ipptool(
     except (OSError, ValueError):
         return None, _PRINTER_STATUS_UNAVAILABLE
 
+    attributes = _parse_ipptool_output(result.stdout)
+    if not attributes and result.stderr:
+        attributes = _parse_ipptool_output(result.stderr)
+    if attributes:
+        return attributes, None
+
     if result.returncode != 0:
         error_text = _first_nonempty_line(result.stderr) or _first_nonempty_line(result.stdout)
         return None, error_text or _PRINTER_STATUS_UNAVAILABLE
-
-    attributes = _parse_ipptool_output(result.stdout)
-    if attributes:
-        return attributes, None
 
     return None, _PRINTER_STATUS_UNAVAILABLE
 
