@@ -162,6 +162,141 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
                 )
                 self.assertIsNone(diagnostics["error"])
 
+    def test_collects_state_and_marker_supplies_from_ipptool_plist_output(self) -> None:
+        dummy_settings = _DummySettings(printer_profile="Office_Printer")
+        expected_command = [
+            "ipptool",
+            "-X",
+            "-T",
+            str(file_printer._PRINTER_QUERY_TIMEOUT),
+            "ipp://localhost/printers/Office_Printer",
+            "/tmp/ipptool",
+        ]
+        expected_supplies = [
+            {"name": "Black Cartridge", "level": 100, "color": "black"},
+            {"name": "Cyan Cartridge", "level": 50, "color": "cyan"},
+        ]
+
+        ipptool_plist = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
+<dict>
+  <key>ResponseAttributes</key>
+  <array>
+    <dict>
+      <key>group-tag</key>
+      <string>printer-attributes-tag</string>
+      <key>attributes</key>
+      <array>
+        <dict>
+          <key>name</key>
+          <string>printer-state</string>
+          <key>value-tag</key>
+          <string>enum</string>
+          <key>values</key>
+          <array>
+            <dict>
+              <key>value</key>
+              <integer>4</integer>
+            </dict>
+          </array>
+        </dict>
+        <dict>
+          <key>name</key>
+          <string>printer-state-message</string>
+          <key>value-tag</key>
+          <string>textWithoutLanguage</string>
+          <key>values</key>
+          <array>
+            <dict>
+              <key>value</key>
+              <string>Printing job 123</string>
+            </dict>
+          </array>
+        </dict>
+        <dict>
+          <key>name</key>
+          <string>marker-names</string>
+          <key>value-tag</key>
+          <string>nameWithoutLanguage</string>
+          <key>values</key>
+          <array>
+            <dict>
+              <key>value</key>
+              <string>Black Cartridge</string>
+            </dict>
+            <dict>
+              <key>value</key>
+              <string>Cyan Cartridge</string>
+            </dict>
+          </array>
+        </dict>
+        <dict>
+          <key>name</key>
+          <string>marker-levels</string>
+          <key>value-tag</key>
+          <string>integer</string>
+          <key>values</key>
+          <array>
+            <dict>
+              <key>value</key>
+              <integer>100</integer>
+            </dict>
+            <dict>
+              <key>value</key>
+              <integer>50</integer>
+            </dict>
+          </array>
+        </dict>
+        <dict>
+          <key>name</key>
+          <string>marker-colors</string>
+          <key>value-tag</key>
+          <string>nameWithoutLanguage</string>
+          <key>values</key>
+          <array>
+            <dict>
+              <key>value</key>
+              <string>black</string>
+            </dict>
+            <dict>
+              <key>value</key>
+              <string>cyan</string>
+            </dict>
+          </array>
+        </dict>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>
+"""
+
+        completed = sp.CompletedProcess(
+            args=["ipptool"],
+            returncode=0,
+            stdout=ipptool_plist
+            + "\n\"/usr/share/cups/ipptool/get-printer-attributes.test\":\n"
+            + "Get printer attributes using get-printer-attributes                  [PASS]\n",
+            stderr="",
+        )
+
+        with patch("printer.file_printer.get_app_settings", return_value=dummy_settings), patch(
+            "printer.file_printer.cups", None
+        ), patch(
+            "printer.file_printer._locate_ipptool_test_file", return_value="/tmp/ipptool"
+        ), patch("printer.file_printer.sp.run") as mock_run:
+            mock_run.return_value = completed
+            diagnostics = file_printer.get_printer_diagnostics()
+
+            mock_run.assert_called_once()
+            self.assertEqual(mock_run.call_args[0][0], expected_command)
+
+        self.assertEqual(diagnostics["state"], "Processing")
+        self.assertEqual(diagnostics["state_message"], "Printing job 123")
+        self.assertEqual(diagnostics["supplies"], expected_supplies)
+        self.assertIsNone(diagnostics["error"])
+
     def test_ipptool_metadata_only_falls_back_to_pycups(self) -> None:
         dummy_settings = _DummySettings(printer_profile="Office_Printer")
         fake_connection = Mock()
