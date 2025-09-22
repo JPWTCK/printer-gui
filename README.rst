@@ -103,27 +103,30 @@ Setup
 
 4) Setup the virtualenv
 -----------------------
-| The project no longer includes an install script. Create your Python
-| virtualenv in the root directory for this project, activate it, and
-| install the required packages manually:
+| The ``printergui.bash`` helper now handles almost all of the initial
+| configuration for you. Running it from the project root will create the
+| ``venv`` directory if needed, install dependencies (unless
+| ``PRINTER_GUI_SKIP_REQUIREMENTS=1``), refresh static assets, and start
+| Gunicorn with sensible defaults:
+
+.. code:: bash
+
+    ./printergui.bash
+
+| Export ``PRINTER_GUI_BIND_ADDRESS`` or ``PRINTER_GUI_GUNICORN_WORKERS``
+| before launching the helper to customise its runtime settings. The
+| separate ``install-service.bash`` script only installs the optional
+| systemd unit when you want the service to run on boot.
+
+| If you prefer to manage the environment yourself, create the virtualenv
+| in the project root, activate it, install the requirements, and build the
+| static asset manifest manually:
 
 .. code:: bash
 
     python3 -m venv venv
     source venv/bin/activate
     pip3 install -r requirements.txt
-
-| The ``printergui.bash`` helper creates the ``venv`` automatically and installs
-| dependencies the first time you run it. Set ``PRINTER_GUI_SKIP_REQUIREMENTS``
-| to ``1`` if you prefer to manage packages yourself.
-|
-| The included startup helpers run ``collectstatic`` before launching the
-| server so WhiteNoise always has the latest assets. If you start Django with
-| another command (for example, ``python manage.py runserver``), run the
-| following first to build the static asset manifest:
-
-.. code:: bash
-
     python manage.py collectstatic --no-input
 
 
@@ -155,9 +158,11 @@ Setup
 
 7) Start the Gunicorn application server
 ---------------------------------------
-| Activate the virtualenv and start Gunicorn using the bundled WSGI entry
-| point. Adjust the worker count for your hardware (two workers are a good
-| starting point for a Raspberry Pi 4):
+| If you used ``printergui.bash`` in the previous step, Gunicorn is already
+| running with the helper's defaults. To manage the server manually, activate
+| the virtualenv and start Gunicorn using the bundled WSGI entry point.
+| Adjust the worker count for your hardware (two workers are a good starting
+| point for a Raspberry Pi 4):
 
 .. code:: bash
 
@@ -172,24 +177,10 @@ Setup
 
     curl -I http://<HOSTNAME>.local:8000/static/css/style.css
 
-
-| The repository includes a simple ``printergui.bash`` helper for Raspberry Pi
-| deployments. The script ensures a ``venv`` exists, installs requirements in
-| the background (unless ``PRINTER_GUI_SKIP_REQUIREMENTS=1``), refreshes static
-| assets, and then launches Gunicorn. Set the
-| ``PRINTER_GUI_BIND_ADDRESS`` environment variable to override the default
-| bind address (``0.0.0.0:8000``) and ``PRINTER_GUI_GUNICORN_WORKERS`` to
-| control the number of worker processes before using it, if desired. You can
-| then launch the server with:
-
-.. code:: bash
-
-    ./printergui.bash
-    [2025-01-04 17:40:26 +0000] [1234] [INFO] Starting gunicorn 23.0.0
-    [2025-01-04 17:40:26 +0000] [1234] [INFO] Listening at: http://0.0.0.0:8000 (1234)
-    [2025-01-04 17:40:26 +0000] [1234] [INFO] Using worker: sync
-    [2025-01-04 17:40:26 +0000] [1235] [INFO] Booting worker with pid: 1235
-
+| Re-run ``./printergui.bash`` whenever you want the helper to restart the
+| service—it keeps the virtualenv in place, reinstalls dependencies when
+| needed (unless ``PRINTER_GUI_SKIP_REQUIREMENTS=1``), refreshes static assets,
+| and then launches Gunicorn for you.
 
 | For local development with automatic reloads you can still run
 | ``python manage.py runserver``, but prefer Gunicorn (or another
