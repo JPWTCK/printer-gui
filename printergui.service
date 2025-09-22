@@ -11,7 +11,7 @@ WorkingDirectory=/home/pi/printer-gui
 Environment=PRINTER_GUI_BIND_ADDRESS=0.0.0.0:8000
 Environment=PRINTER_GUI_GUNICORN_WORKERS=2
 EnvironmentFile=-/etc/default/printergui
-ExecStart=/home/pi/printer-gui/printergui.bash
+ExecStart=/usr/bin/env bash /home/pi/printer-gui/printergui.bash
 Restart=on-failure
 RestartSec=5s
 
