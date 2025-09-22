@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess as sp
+import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Tuple
 
 try:  # pragma: no cover - optional dependency
@@ -29,6 +30,8 @@ _PRINTER_NOT_SELECTED = "No printer selected"
 
 _printer_profile = None
 _PRINTER_QUERY_TIMEOUT = 5
+_IPP_XML_NAMESPACE = "urn:ietf:params:xml:ns:ipp"
+_IPP_XML_PREFIX = f"{{{_IPP_XML_NAMESPACE}}}"
 
 _IPP_STATE_NAMES = {
     3: "Idle",
@@ -293,21 +296,53 @@ def _parse_printer_supply(value: Any) -> List[Dict[str, Any]]:
     supplies: List[Dict[str, Any]] = []
     for raw_entry in _ensure_list(value):
         entry: Dict[str, Any] = {}
-        for component in re.split(r";\s*", raw_entry):
-            if not component or "=" not in component:
-                continue
-            key, raw_val = component.split("=", 1)
-            normalized_val = _normalize_string(raw_val)
-            if normalized_val is None:
-                continue
-            if (
-                len(normalized_val) >= 2
-                and normalized_val[0] == normalized_val[-1]
-                and normalized_val[0] in {'"', "'"}
-            ):
-                normalized_val = normalized_val[1:-1]
+        components: List[Tuple[str, str]] = []
 
-            normalized_key = key.strip().lower()
+        if isinstance(raw_entry, dict):
+            for raw_key, raw_val in raw_entry.items():
+                normalized_key = _normalize_string(raw_key)
+                if normalized_key is None:
+                    continue
+                normalized_key = normalized_key.lower()
+
+                if isinstance(raw_val, (list, tuple)):
+                    values = list(raw_val)
+                else:
+                    values = [raw_val]
+
+                for value_item in values:
+                    normalized_val = _normalize_string(value_item)
+                    if normalized_val is None:
+                        continue
+                    if (
+                        len(normalized_val) >= 2
+                        and normalized_val[0] == normalized_val[-1]
+                        and normalized_val[0] in {'"', "'"}
+                    ):
+                        normalized_val = normalized_val[1:-1]
+                    components.append((normalized_key, normalized_val))
+        else:
+            normalized_entry = _normalize_string(raw_entry)
+            if normalized_entry is None:
+                continue
+            for component in re.split(r";\s*", normalized_entry):
+                if not component or "=" not in component:
+                    continue
+                key, raw_val = component.split("=", 1)
+                normalized_val = _normalize_string(raw_val)
+                if normalized_val is None:
+                    continue
+                if (
+                    len(normalized_val) >= 2
+                    and normalized_val[0] == normalized_val[-1]
+                    and normalized_val[0] in {'"', "'"}
+                ):
+                    normalized_val = normalized_val[1:-1]
+
+                normalized_key = key.strip().lower()
+                components.append((normalized_key, normalized_val))
+
+        for normalized_key, normalized_val in components:
             if normalized_key in {"marker-name", "supply-name"}:
                 entry["name"] = normalized_val
             elif normalized_key in {"marker-color", "supply-color"}:
@@ -375,57 +410,139 @@ def _parse_supply_entries(attributes: Dict[str, Any]) -> List[Dict[str, Any]]:
     return _parse_printer_supply(attributes.get("printer-supply"))
 
 
-def _clean_ipptool_key(key: str) -> str:
-    normalized = re.sub(r"[ \t\r\f\v]+", " ", key.strip())
-    if "(" in normalized:
-        normalized = normalized.split("(", 1)[0].rstrip()
-    return normalized
+def _parse_ipptool_xml_collection(element: ET.Element) -> Dict[str, Any]:
+    collection: Dict[str, Any] = {}
+    for member in element.findall(f"{_IPP_XML_PREFIX}member"):
+        member_name = member.get("name")
+        if not member_name:
+            continue
+
+        values: List[Any] = []
+        for value_element in member.findall(f"{_IPP_XML_PREFIX}value"):
+            parsed_value = _parse_ipptool_xml_value(value_element)
+            if parsed_value is None:
+                continue
+            if isinstance(parsed_value, list):
+                values.extend(parsed_value)
+            else:
+                values.append(parsed_value)
+
+        if not values:
+            continue
+
+        member_value: Any
+        if len(values) == 1:
+            member_value = values[0]
+        else:
+            member_value = values
+
+        existing = collection.get(member_name)
+        if existing is None:
+            collection[member_name] = member_value
+        else:
+            if isinstance(existing, list):
+                if isinstance(member_value, list):
+                    existing.extend(member_value)
+                else:
+                    existing.append(member_value)
+            else:
+                if isinstance(member_value, list):
+                    collection[member_name] = [existing, *member_value]
+                else:
+                    collection[member_name] = [existing, member_value]
+
+    return collection
 
 
-def _clean_ipptool_value(value: str) -> str:
-    cleaned = value.strip()
-    if cleaned.endswith(","):
-        cleaned = cleaned[:-1].rstrip()
-    if (
-        len(cleaned) >= 2
-        and cleaned[0] == cleaned[-1]
-        and cleaned[0] in {'"', "'"}
-    ):
-        cleaned = cleaned[1:-1]
-    return cleaned
+def _parse_ipptool_xml_value(element: ET.Element) -> Optional[Any]:
+    collection = element.find(f"{_IPP_XML_PREFIX}collection")
+    if collection is not None:
+        parsed_collection = _parse_ipptool_xml_collection(collection)
+        return parsed_collection if parsed_collection else None
+
+    text = "".join(element.itertext()).strip()
+    if not text:
+        return None
+
+    return text
+
+
+def _merge_ipptool_attribute_values(
+    attributes: Dict[str, Any],
+    key: str,
+    values: List[Any],
+) -> None:
+    if not values:
+        return
+
+    if key in attributes:
+        existing = attributes[key]
+        if isinstance(existing, list):
+            existing.extend(values)
+        else:
+            attributes[key] = [existing, *values]
+    else:
+        if len(values) == 1:
+            attributes[key] = values[0]
+        else:
+            attributes[key] = list(values)
+
+
+def _parse_ipptool_xml_output(output: str) -> Dict[str, Any]:
+    stripped_output = output.strip()
+    if not stripped_output:
+        return {}
+
+    xml_start = stripped_output.find("<?xml")
+    if xml_start == -1:
+        xml_start = stripped_output.find("<ipp:")
+    if xml_start == -1:
+        return {}
+
+    xml_text = stripped_output[xml_start:].strip()
+    if not xml_text:
+        return {}
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        end_index = xml_text.rfind("</ipp:")
+        if end_index == -1:
+            return {}
+        end_close = xml_text.find(">", end_index)
+        if end_close == -1:
+            return {}
+        try:
+            root = ET.fromstring(xml_text[: end_close + 1])
+        except ET.ParseError:
+            return {}
+
+    attributes: Dict[str, Any] = {}
+    for attribute_element in root.findall(f".//{_IPP_XML_PREFIX}attribute"):
+        name = attribute_element.get("name")
+        if not name:
+            continue
+
+        values: List[Any] = []
+        for value_element in attribute_element.findall(f"{_IPP_XML_PREFIX}value"):
+            parsed_value = _parse_ipptool_xml_value(value_element)
+            if parsed_value is None:
+                continue
+            if isinstance(parsed_value, list):
+                values.extend(parsed_value)
+            else:
+                values.append(parsed_value)
+
+        if not values:
+            continue
+
+        _merge_ipptool_attribute_values(attributes, name, values)
+
+    return attributes
 
 
 def _parse_ipptool_output(output: str) -> Dict[str, Any]:
-    attributes: Dict[str, Any] = {}
-    for raw_line in output.splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        key: str
-        value: str
-        if ":" in stripped:
-            raw_key, value = stripped.split(":", 1)
-        elif "=" in stripped:
-            raw_key, value = stripped.split("=", 1)
-        else:
-            continue
-
-        key = _clean_ipptool_key(raw_key)
-        value = _clean_ipptool_value(value)
-        if not key:
-            continue
-
-        existing = attributes.get(key)
-        if existing is None:
-            attributes[key] = value
-        else:
-            if isinstance(existing, list):
-                existing.append(value)
-            else:
-                attributes[key] = [existing, value]
-
-    return attributes
+    return _parse_ipptool_xml_output(output)
 
 
 def _locate_ipptool_test_file() -> Optional[str]:
@@ -475,7 +592,7 @@ def _query_printer_attributes_via_ipptool(
     uri = f"ipp://localhost/printers/{printer}"
     try:
         result = sp.run(
-            ["ipptool", "-T", str(_PRINTER_QUERY_TIMEOUT), uri, test_file],
+            ["ipptool", "-X", "-T", str(_PRINTER_QUERY_TIMEOUT), uri, test_file],
             check=False,
             stdout=sp.PIPE,
             stderr=sp.PIPE,
@@ -523,19 +640,19 @@ def get_printer_diagnostics(printer_name: Optional[str] = None) -> Dict[str, Any
     attributes: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
 
-    cups_attributes, cups_error = _query_printer_attributes_via_pycups(sanitized)
-    if cups_attributes is not None:
-        attributes = cups_attributes
-    if cups_error:
-        error_message = cups_error
+    ipptool_attributes, ipptool_error = _query_printer_attributes_via_ipptool(sanitized)
+    if ipptool_attributes is not None:
+        attributes = ipptool_attributes
+    elif ipptool_error:
+        error_message = ipptool_error
 
     if attributes is None:
-        ipptool_attributes, ipptool_error = _query_printer_attributes_via_ipptool(sanitized)
-        if ipptool_attributes is not None:
-            attributes = ipptool_attributes
+        cups_attributes, cups_error = _query_printer_attributes_via_pycups(sanitized)
+        if cups_attributes is not None:
+            attributes = cups_attributes
             error_message = None
-        elif ipptool_error:
-            error_message = ipptool_error
+        elif cups_error and error_message in {None, _PRINTER_STATUS_UNAVAILABLE}:
+            error_message = cups_error
 
     diagnostics["error"] = error_message
 

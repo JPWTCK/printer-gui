@@ -32,6 +32,9 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
 
         with patch("printer.file_printer.get_app_settings", return_value=dummy_settings), patch(
             "printer.file_printer.cups", fake_cups
+        ), patch(
+            "printer.file_printer._query_printer_attributes_via_ipptool",
+            return_value=(None, file_printer._PRINTER_STATUS_UNAVAILABLE),
         ):
             diagnostics = file_printer.get_printer_diagnostics()
 
@@ -58,6 +61,9 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
 
         with patch("printer.file_printer.get_app_settings", return_value=dummy_settings), patch(
             "printer.file_printer.cups", fake_cups
+        ), patch(
+            "printer.file_printer._query_printer_attributes_via_ipptool",
+            return_value=(None, file_printer._PRINTER_STATUS_UNAVAILABLE),
         ):
             diagnostics = file_printer.get_printer_diagnostics()
 
@@ -85,6 +91,7 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
         dummy_settings = _DummySettings(printer_profile="Office_Printer")
         expected_command = [
             "ipptool",
+            "-X",
             "-T",
             str(file_printer._PRINTER_QUERY_TIMEOUT),
             "ipp://localhost/printers/Office_Printer",
@@ -95,40 +102,40 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
             {"name": "Cyan Cartridge", "level": 50, "color": "cyan"},
         ]
 
+        ipptool_xml = """<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<ipp:message xmlns:ipp=\"urn:ietf:params:xml:ns:ipp\">
+  <ipp:attribute-group tag=\"printer-attributes-tag\">
+    <ipp:attribute name=\"printer-state\" tag=\"enum\">
+      <ipp:value>processing</ipp:value>
+    </ipp:attribute>
+    <ipp:attribute name=\"printer-state-message\" tag=\"textWithoutLanguage\">
+      <ipp:value>Printing job 123</ipp:value>
+    </ipp:attribute>
+    <ipp:attribute name=\"marker-names\" tag=\"nameWithoutLanguage\">
+      <ipp:value>Black Cartridge</ipp:value>
+      <ipp:value>Cyan Cartridge</ipp:value>
+    </ipp:attribute>
+    <ipp:attribute name=\"marker-levels\" tag=\"integer\">
+      <ipp:value>100</ipp:value>
+      <ipp:value>50</ipp:value>
+    </ipp:attribute>
+    <ipp:attribute name=\"marker-colors\" tag=\"nameWithoutLanguage\">
+      <ipp:value>black</ipp:value>
+      <ipp:value>cyan</ipp:value>
+    </ipp:attribute>
+  </ipp:attribute-group>
+</ipp:message>
+"""
+
         ipptool_variants = {
-            "spaces": [
-                '"ipp://localhost/printers/Office_Printer" - get-printer-attributes',
-                "{",
-                "    attributes-charset (charset) = utf-8",
-                "    printer-state (enum) = processing",
-                "    printer-state-message (textWithoutLanguage) = \"Printing job 123\"",
-                "    marker-names (nameWithoutLanguage) = \"Black Cartridge\"",
-                "    marker-names (nameWithoutLanguage) = \"Cyan Cartridge\"",
-                "    marker-levels (integer) = 100",
-                "    marker-levels (integer) = 50",
-                "    marker-colors (nameWithoutLanguage) = \"black\"",
-                "    marker-colors (nameWithoutLanguage) = \"cyan\"",
-                "}",
-            ],
-            "tabs": [
-                '"ipp://localhost/printers/Office_Printer" - get-printer-attributes',
-                "{",
-                "\tattributes-charset\t(charset) = utf-8",
-                "\tprinter-state\t(enum) = processing",
-                "\tprinter-state-message\t(textWithoutLanguage) = \"Printing job 123\"",
-                "\tmarker-names\t(nameWithoutLanguage) = \"Black Cartridge\"",
-                "\tmarker-names\t(nameWithoutLanguage) = \"Cyan Cartridge\"",
-                "\tmarker-levels\t(integer) = 100",
-                "\tmarker-levels\t(integer) = 50",
-                "\tmarker-colors\t(nameWithoutLanguage) = \"black\"",
-                "\tmarker-colors\t(nameWithoutLanguage) = \"cyan\"",
-                "}",
-            ],
+            "xml_only": ipptool_xml,
+            "xml_with_trailing_metadata": ipptool_xml
+            + "\n\"/usr/share/cups/ipptool/get-printer-attributes.test\":\n"
+            + "Get printer attributes using get-printer-attributes                  [PASS]\n",
         }
 
-        for variant, lines in ipptool_variants.items():
+        for variant, ipptool_stdout in ipptool_variants.items():
             with self.subTest(ipptool_output=variant):
-                ipptool_stdout = "\n".join(lines)
                 completed = sp.CompletedProcess(
                     args=["ipptool"],
                     returncode=0,
@@ -154,3 +161,53 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
                     diagnostics["error"], file_printer._PRINTER_STATUS_UNAVAILABLE
                 )
                 self.assertIsNone(diagnostics["error"])
+
+    def test_ipptool_metadata_only_falls_back_to_pycups(self) -> None:
+        dummy_settings = _DummySettings(printer_profile="Office_Printer")
+        fake_connection = Mock()
+        fake_connection.getPrinterAttributes.return_value = {
+            "printer-state": 3,
+            "printer-state-message": "Ready",
+            "marker-names": ["Black Toner"],
+            "marker-levels": ["80"],
+            "marker-colors": ["black"],
+        }
+        fake_cups = SimpleNamespace(Connection=Mock(return_value=fake_connection))
+
+        metadata_only = (
+            '"/usr/share/cups/ipptool/get-printer-attributes.test":\n'
+            "Get printer attributes using get-printer-attributes                  [PASS]\n"
+        )
+        completed = sp.CompletedProcess(
+            args=["ipptool"],
+            returncode=0,
+            stdout=metadata_only,
+            stderr="",
+        )
+
+        expected_command = [
+            "ipptool",
+            "-X",
+            "-T",
+            str(file_printer._PRINTER_QUERY_TIMEOUT),
+            "ipp://localhost/printers/Office_Printer",
+            "/tmp/ipptool",
+        ]
+
+        with patch("printer.file_printer.get_app_settings", return_value=dummy_settings), patch(
+            "printer.file_printer.cups", fake_cups
+        ), patch(
+            "printer.file_printer._locate_ipptool_test_file", return_value="/tmp/ipptool"
+        ), patch("printer.file_printer.sp.run") as mock_run:
+            mock_run.return_value = completed
+            diagnostics = file_printer.get_printer_diagnostics()
+
+        mock_run.assert_called_once()
+        self.assertEqual(mock_run.call_args[0][0], expected_command)
+
+        self.assertEqual(diagnostics["state"], "Idle")
+        self.assertEqual(diagnostics["state_message"], "Ready")
+        self.assertEqual(
+            diagnostics["supplies"], [{"name": "Black Toner", "level": 80, "color": "black"}]
+        )
+        self.assertIsNone(diagnostics["error"])
