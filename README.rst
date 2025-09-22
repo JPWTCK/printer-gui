@@ -8,17 +8,23 @@ printer-gui
     :width: 800
     :alt: Printer-GUI's desktop and mobile views
 
-Changes
-#######
+Highlights
+##########
 
-- Capturing ``stderr`` from subprocesses to convey errors to the user.
-- Leveraging Django's Messages Framework to display statuses and exceptions.
-- Added Docuvert-powered conversion so common Office formats are rendered to
-  PDF automatically while files CUPS handles natively continue to bypass
-  conversion.
-- Re-designed UI for better look/feel. -- Improved mobile/overall experience.
-- Added a favicon to better distinguish the browser tab.
-- Added per-session print queues so simultaneous users do not consume each other's jobs.
+- Per-session print queues keep simultaneous users from seeing or deleting
+  each other's jobs and automatically clean up uploaded files after
+  printing.
+- Docuvert-powered conversion renders Microsoft Office, OpenDocument, and RTF
+  uploads to PDF while allowing CUPS-native formats to print directly.
+- Django's Messages Framework surfaces ``lp`` output, conversion problems, and
+  other errors directly in the browser.
+- The printer diagnostics dashboard summarises IPP state, printer messages, and
+  supply levels using ``ipptool`` when available and falling back to
+  ``pycups``/``lpstat`` when the CLI tool is not present.
+- Startup helpers refresh static assets, capture subprocess ``stderr``, and
+  offer a one-command Gunicorn launcher for Raspberry Pi deployments.
+- Automatic migrations, hostname discovery, and sanitised upload filenames
+  reduce manual setup effort on a single-board computer.
 
 
 Requirements
@@ -26,9 +32,13 @@ Requirements
 
 - Raspberry Pi or similar SBC with networking capability
 - Python 3.10+ (required by Django 5.2) and the ``pip`` package installer on the SBC's OS.
-- Ability to install CUPS so the ``lp`` command is available to the application.
+- Ability to install CUPS so the ``lp``, ``lpstat``, and ``ipptool`` commands are
+  available to the application.
 - A network printer connected on the local network
-- Docuvert 1.1.2 to convert Office documents and OpenDocument files to PDF before printing
+- Docuvert 1.1.2 (``pip install docuvert==1.1.2``) to convert Office documents
+  and OpenDocument files to PDF before printing
+- (Optional) ``pycups`` to enhance the diagnostics view. The app falls back to
+  command-line tools when the module is not installed.
 
 
 Limitations
@@ -56,8 +66,9 @@ Setup
 
 2) Install system packages
 --------------------------
-| Install the CUPS packages so the ``lp`` command is available to Django.
-| LibreOffice remains unnecessary; Docuvert (installed via ``pip``) now
+| Install the CUPS packages so the ``lp``, ``lpstat``, and ``ipptool`` commands
+| are available to Django. LibreOffice remains unnecessary; Docuvert
+| (installed via ``pip``) now
 | handles Office/OpenDocument conversions. On Debian/Ubuntu:
 
 .. code:: bash
@@ -67,8 +78,10 @@ Setup
     sudo usermod -aG lpadmin $USER
     sudo systemctl enable --now cups
 
-| On other distributions, install the package that provides ``lp`` (often
-| named ``cups`` or ``cups-client``).
+| On other distributions, install the package that provides the ``lp`` and
+| ``lpstat`` utilities (often named ``cups`` or ``cups-client``) and ensure
+| the ``ipptool`` command is available. Installing ``pycups`` alongside the
+| project is optional but enables richer diagnostics when available.
 
 
 3) Download the project files
@@ -100,6 +113,10 @@ Setup
     source venv/bin/activate
     pip3 install -r requirements.txt
 
+| The ``printergui.bash`` helper creates the ``venv`` automatically and installs
+| dependencies the first time you run it. Set ``PRINTER_GUI_SKIP_REQUIREMENTS``
+| to ``1`` if you prefer to manage packages yourself.
+|
 | The included startup helpers run ``collectstatic`` before launching the
 | server so WhiteNoise always has the latest assets. If you start Django with
 | another command (for example, ``python manage.py runserver``), run the
@@ -157,12 +174,13 @@ Setup
 
 
 | The repository includes a simple ``printergui.bash`` helper for Raspberry Pi
-| deployments. Set the ``PRINTER_GUI_BIND_ADDRESS`` environment variable
-| to override the default bind address (``0.0.0.0:8000``) and
-| ``PRINTER_GUI_GUNICORN_WORKERS`` to control the number of worker
-| processes before using it, if desired. The helper also refreshes the
-| static asset manifest automatically before Gunicorn starts. You can then
-| launch the server with:
+| deployments. The script ensures a ``venv`` exists, installs requirements in
+| the background (unless ``PRINTER_GUI_SKIP_REQUIREMENTS=1``), refreshes static
+| assets, and then launches Gunicorn. Set the
+| ``PRINTER_GUI_BIND_ADDRESS`` environment variable to override the default
+| bind address (``0.0.0.0:8000``) and ``PRINTER_GUI_GUNICORN_WORKERS`` to
+| control the number of worker processes before using it, if desired. You can
+| then launch the server with:
 
 .. code:: bash
 
@@ -227,7 +245,7 @@ Setup
 | ``systemctl status printergui``, and
 | ``sudo journalctl -u printergui``
 
-7) Configure the server to use your printer
+8) Configure the server to use your printer
 -------------------------------------------
 | The printer server has not yet been configured to use your
 | CUPS printer profile. With the server running, visit its
@@ -244,3 +262,48 @@ Setup
 | defaults for the print server. Now the server should be able
 | to print correctly. Upload some test files, configure the
 | options, and print out the files if you wish.
+
+9) Review printer diagnostics (optional)
+---------------------------------------
+| Use the navigation bar's status link (``/status/``) to open the diagnostics
+| dashboard. The view queries ``ipptool`` for IPP attributes, falls back to
+| ``pycups`` when available, and ultimately ``lpstat`` to display the printer's
+| current state, any reported error messages, and supply levels. Refresh the
+| page whenever you need to confirm the printer is online before starting a
+| print batch.
+
+
+Using the web interface
+#######################
+
+* **Uploading files:** the upload form accepts the formats listed in
+  ``printer/upload_types.py``. Filenames are sanitised before saving and files
+  live in ``static/uploads`` until they are deleted or printed. Non-PDF uploads
+  are rendered to PDF automatically via Docuvert.
+* **Managing the queue:** each browser session has its own queue. Use the edit
+  dialog to adjust page ranges, colour mode, and orientation before printing.
+  Defaults come from the Settings page so administrators can preselect sensible
+  values for their printer.
+* **Printing jobs:** starting a print run calls ``lp`` for every queued file,
+  surfaces any ``stderr`` output as on-screen alerts, and removes jobs as they
+  succeed. If a job fails it remains visible so you can retry after addressing
+  the issue.
+* **Monitoring the printer:** the diagnostics page and the printer status badge
+  on the home screen provide quick visibility into the device's state and any
+  reported warnings.
+
+
+Environment variables
+#####################
+
+- ``DJANGO_SECRET_KEY`` – supply a persistent secret key in production
+  environments instead of allowing Django to generate one at runtime.
+- ``PRINTER_GUI_BIND_ADDRESS`` – set the host and port Gunicorn should bind to
+  (defaults to ``0.0.0.0:8000``).
+- ``PRINTER_GUI_GUNICORN_WORKERS`` – control the number of Gunicorn workers.
+- ``PRINTER_GUI_ALLOWED_HOSTS`` – provide additional comma-separated hostnames
+  that should be added to Django's ``ALLOWED_HOSTS`` list.
+- ``PRINTER_GUI_SKIP_REQUIREMENTS`` – set to ``1`` to stop
+  ``printergui.bash`` from running ``pip install -r requirements.txt``.
+- ``PRINTER_GUI_AUTO_APPLY_MIGRATIONS`` – set to ``0`` to disable automatic
+  migration execution at startup.
