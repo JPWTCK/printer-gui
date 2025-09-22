@@ -200,7 +200,20 @@ Setup
 | automatically before Gunicorn launches. If you customize the unit to call
 | Gunicorn directly, keep a ``collectstatic`` step in your workflow.
 
-| Start and enable it once it matches your setup.
+| Start and enable it once it matches your setup. The repository includes a helper
+| script to copy the unit file into place, reload systemd, and optionally enable
+| and start the service:
+
+.. code:: bash
+
+    cd /home/pi/printer-gui
+    sudo ./install-service.bash --enable --start
+
+| By default the script installs ``printergui.service`` to
+| ``/etc/systemd/system``. Use ``--service-file`` or ``--target-dir`` to point to
+| custom locations, and pass ``--enable`` and ``--start`` (or ``--now``) only when
+| you are ready for the service to run automatically. If you prefer to execute
+| the steps manually, run:
 
 .. code:: bash
 
