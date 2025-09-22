@@ -5,20 +5,33 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-if [[ -f "venv/bin/activate" ]]; then
-    # shellcheck disable=SC1091
-    source "venv/bin/activate"
-fi
+VENV_DIR="$PROJECT_ROOT/venv"
+VENV_ACTIVATE="$VENV_DIR/bin/activate"
+VENV_PYTHON="$VENV_DIR/bin/python"
 
-PYTHON_BIN="python"
-if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
-    if command -v python3 >/dev/null 2>&1; then
-        PYTHON_BIN="python3"
-    else
-        echo "Unable to locate a Python interpreter in PATH." >&2
+if [[ ! -f "$VENV_ACTIVATE" ]]; then
+    echo "Virtual environment not found at $VENV_ACTIVATE; creating it now." >&2
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "python3 is required to create the virtual environment but was not found in PATH." >&2
         exit 1
     fi
+    python3 -m venv "$VENV_DIR"
 fi
+
+if [[ ! -f "$VENV_ACTIVATE" ]]; then
+    echo "Failed to create the virtual environment at $VENV_DIR." >&2
+    exit 1
+fi
+
+# shellcheck disable=SC1091
+source "$VENV_ACTIVATE"
+
+if [[ ! -x "$VENV_PYTHON" ]]; then
+    echo "Python interpreter not found at $VENV_PYTHON. The virtual environment may be corrupted." >&2
+    exit 1
+fi
+
+PYTHON_BIN="$VENV_PYTHON"
 
 if [[ "${PRINTER_GUI_SKIP_REQUIREMENTS:-0}" != "1" && -f "requirements.txt" ]]; then
     if "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
