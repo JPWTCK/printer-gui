@@ -297,6 +297,113 @@ class PrinterDiagnosticsHelperTests(SimpleTestCase):
         self.assertEqual(diagnostics["supplies"], expected_supplies)
         self.assertIsNone(diagnostics["error"])
 
+    def test_parses_ipptool_plist_with_attribute_dictionary(self) -> None:
+        sample_plist = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
+<dict>
+  <key>ResponseAttributes</key>
+  <array>
+    <dict>
+      <key>group-tag</key>
+      <string>printer-attributes-tag</string>
+      <key>attributes</key>
+      <dict>
+        <key>printer-state</key>
+        <dict>
+          <key>value-tag</key>
+          <string>enum</string>
+          <key>values</key>
+          <array>
+            <dict>
+              <key>value</key>
+              <integer>3</integer>
+            </dict>
+          </array>
+        </dict>
+        <key>printer-state-reasons</key>
+        <array>
+          <string>none</string>
+        </array>
+        <key>printer-name</key>
+        <dict>
+          <key>value-tag</key>
+          <string>nameWithoutLanguage</string>
+          <key>value</key>
+          <string>Sample_Printer</string>
+        </dict>
+        <key>printer-info</key>
+        <string>Sample printer</string>
+        <key>printer-is-accepting-jobs</key>
+        <dict>
+          <key>value-tag</key>
+          <string>boolean</string>
+          <key>values</key>
+          <array>
+            <dict>
+              <key>value</key>
+              <true/>
+            </dict>
+          </array>
+        </dict>
+        <key>media-ready</key>
+        <array>
+          <string>iso_a4_210x297mm</string>
+          <string>iso_dl_110x220mm</string>
+        </array>
+        <key>media-col-ready</key>
+        <array>
+          <dict>
+            <key>media-size</key>
+            <dict>
+              <key>x-dimension</key>
+              <integer>21000</integer>
+              <key>y-dimension</key>
+              <integer>29700</integer>
+            </dict>
+            <key>media-bottom-margin</key>
+            <integer>330</integer>
+          </dict>
+        </array>
+        <key>document-format-supported</key>
+        <array>
+          <string>application/pdf</string>
+          <string>image/pwg-raster</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>
+"""
+
+        parsed = file_printer._parse_ipptool_output(sample_plist)
+
+        self.assertEqual(parsed["printer-state"], "3")
+        self.assertEqual(parsed["printer-state-reasons"], "none")
+        self.assertEqual(parsed["printer-name"], "Sample_Printer")
+        self.assertEqual(parsed["printer-info"], "Sample printer")
+        self.assertEqual(parsed["printer-is-accepting-jobs"], "true")
+        self.assertEqual(
+            parsed["document-format-supported"],
+            ["application/pdf", "image/pwg-raster"],
+        )
+        self.assertEqual(
+            parsed["media-ready"], ["iso_a4_210x297mm", "iso_dl_110x220mm"]
+        )
+
+        media_col_ready = parsed.get("media-col-ready")
+        self.assertIsNotNone(media_col_ready)
+        if isinstance(media_col_ready, list):
+            self.assertGreater(len(media_col_ready), 0)
+            first_collection = media_col_ready[0]
+        else:
+            first_collection = media_col_ready
+        self.assertEqual(
+            first_collection["media-size"], {"x-dimension": "21000", "y-dimension": "29700"}
+        )
+        self.assertEqual(first_collection["media-bottom-margin"], "330")
+
     def test_ipptool_metadata_only_falls_back_to_pycups(self) -> None:
         dummy_settings = _DummySettings(printer_profile="Office_Printer")
         fake_connection = Mock()
