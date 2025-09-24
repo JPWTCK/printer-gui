@@ -715,6 +715,10 @@ def _parse_plist_attribute_value(value: Any) -> Optional[Any]:
                 return {name: nested_values[0]}
             return {name: nested_values}
 
+        collection = _parse_plist_collection(value)
+        if collection:
+            return collection
+
     return None
 
 
@@ -774,6 +778,14 @@ def _collect_plist_attributes(node: Any, attributes: Dict[str, Any]) -> None:
                 else:
                     _collect_plist_attributes(value, attributes)
             elif lower_key not in {"tag", "group-tag", "value-tag"}:
+                normalized_name = _normalize_string(key)
+                if normalized_name:
+                    parsed_values = _parse_plist_attribute_values(value)
+                    if parsed_values:
+                        _merge_ipptool_attribute_values(
+                            attributes, normalized_name, parsed_values
+                        )
+                        continue
                 _collect_plist_attributes(value, attributes)
 
     elif isinstance(node, list):
